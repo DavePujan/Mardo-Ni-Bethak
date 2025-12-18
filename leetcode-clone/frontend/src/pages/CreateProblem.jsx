@@ -5,7 +5,6 @@ export default function CreateProblem() {
     const [form, setForm] = useState({
         title: "",
         description: "",
-        functionName: "solution",
         language: "javascript",
         inputFormat: "",
         outputFormat: ""
@@ -68,10 +67,6 @@ export default function CreateProblem() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-pink-400 mb-1">Function Name:</label>
-                            <input name="functionName" value={form.functionName} onChange={handleChange} className="w-full bg-[#2d2d2d] border border-gray-600 rounded p-2 text-white outline-none" placeholder="e.g. addTwo" required />
-                        </div>
                         <div>
                             <label className="block text-pink-400 mb-1">Language:</label>
                             <select name="language" value={form.language} onChange={handleChange} className="w-full bg-[#2d2d2d] border border-gray-600 rounded p-2 text-white outline-none">

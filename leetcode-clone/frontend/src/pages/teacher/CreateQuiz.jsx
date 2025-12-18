@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { supabase } from "../../lib/supabase";
 import { createFullQuiz } from "../../utils/api";
 
 export default function CreateQuiz() {
@@ -20,14 +21,14 @@ export default function CreateQuiz() {
         type: "code", // 'mcq' or 'code'
         marks: 5,
         // Code specific
-        functionName: "solution",
         language: "javascript",
         inputFormat: "",
         outputFormat: "",
         testCases: [{ input: "", output: "", isHidden: false }],
         // MCQ specific
         options: ["", "", "", ""],
-        answer: ""
+        answer: "",
+        image: "" // Optional Image URL
     });
 
     const handleQuizChange = (e) => setQuizDetails({ ...quizDetails, [e.target.name]: e.target.value });
@@ -69,13 +70,13 @@ export default function CreateQuiz() {
             question: "",
             type: "code",
             marks: 5,
-            functionName: "solution",
             language: "javascript",
             inputFormat: "",
             outputFormat: "",
             testCases: [{ input: "", output: "", isHidden: false }],
             options: ["", "", "", ""],
-            answer: ""
+            answer: "",
+            image: ""
         });
     };
 
@@ -152,7 +153,6 @@ export default function CreateQuiz() {
                 {currentQ.type === "code" ? (
                     <div className="bg-[#1e1e1e] border-l-4 border-blue-500 pl-4 py-2">
                         <div className="grid grid-cols-3 gap-4 mb-4">
-                            <input placeholder="Function Name (e.g. addTwo)" value={currentQ.functionName} onChange={e => handleQChange("functionName", e.target.value)} className="input bg-[#252526] border-gray-600 text-white" />
                             <select value={currentQ.language} onChange={e => handleQChange("language", e.target.value)} className="input bg-[#252526] border-gray-600 text-white">
                                 <option value="javascript">JavaScript</option>
                                 <option value="python">Python</option>
@@ -180,6 +180,54 @@ export default function CreateQuiz() {
                     </div>
                 ) : (
                     <div className="bg-[#1e1e1e] border-l-4 border-yellow-500 pl-4 py-2">
+                        <div className="mb-4">
+                            <label className="block mb-1 text-gray-400">Optional Image:</label>
+                            {currentQ.image ? (
+                                <div className="flex items-center gap-4 bg-[#252526] p-2 rounded border border-green-500">
+                                    <span className="text-green-400 text-sm truncate max-w-xs">{currentQ.image}</span>
+                                    <button
+                                        onClick={() => handleQChange("image", "")}
+                                        className="text-red-400 hover:text-red-300 text-sm font-bold"
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded inline-flex items-center transition">
+                                        <span>+ Upload Image</span>
+                                        <input
+                                            type="file"
+                                            className="hidden"
+                                            accept="image/*"
+                                            onChange={async (e) => {
+                                                const file = e.target.files[0];
+                                                if (!file) return;
+
+                                                try {
+                                                    const fileName = `${Date.now()}_${file.name}`;
+                                                    const { data, error } = await supabase.storage
+                                                        .from("quiz_images")
+                                                        .upload(fileName, file);
+
+                                                    if (error) throw error;
+
+                                                    const { data: publicUrlData } = supabase.storage
+                                                        .from("quiz_images")
+                                                        .getPublicUrl(fileName);
+
+                                                    handleQChange("image", publicUrlData.publicUrl);
+                                                } catch (err) {
+                                                    alert("Error uploading image: " + err.message);
+                                                }
+                                            }}
+                                        />
+                                    </label>
+                                    <p className="text-xs text-gray-500 mt-1">Supported: JPG, PNG, GIF</p>
+                                </div>
+                            )}
+                        </div>
+
                         <p className="mb-2 font-semibold">Options:</p>
                         {currentQ.options.map((opt, i) => (
                             <div key={i} className="mb-2 flex items-center gap-2">
@@ -208,7 +256,7 @@ export default function CreateQuiz() {
                                     <h3 className="font-bold text-white text-lg"><span className="text-gray-500">Q{i + 1}.</span> {q.question}</h3>
                                     <p className="text-sm text-gray-400">Type: <span className="uppercase text-yellow-500">{q.type}</span> | Marks: {q.marks}</p>
                                     {q.type === 'mcq' && <p className="text-xs text-gray-500 mt-1">Answer: {q.answer}</p>}
-                                    {q.type === 'code' && <p className="text-xs text-gray-500 mt-1">Fn: {q.functionName} | Lang: {q.language} | Cases: {q.testCases.length}</p>}
+                                    {q.type === 'code' && <p className="text-xs text-gray-500 mt-1">Lang: {q.language} | Cases: {q.testCases.length}</p>}
                                 </div>
                                 <button onClick={() => deleteQuestion(i)} className="text-red-500 hover:text-red-400">Delete</button>
                             </div>

@@ -144,7 +144,7 @@ router.get("/quiz/:id", auth, async (req, res) => {
                 question_id,
                 weightage,
                 question:questions (
-                    id, title, type, language, input_format, output_format, function_name,
+                    id, title, type, language, input_format, output_format, function_name, image_url,
                     mcq_options (id, option_text)
                 )
             `)

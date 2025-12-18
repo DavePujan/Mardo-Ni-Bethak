@@ -58,6 +58,7 @@ CREATE TABLE public.questions (
   weightage integer DEFAULT 10,
   created_by uuid,
   created_at timestamp without time zone DEFAULT now(),
+  image_url text,
   CONSTRAINT questions_pkey PRIMARY KEY (id),
   CONSTRAINT questions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id)
 );

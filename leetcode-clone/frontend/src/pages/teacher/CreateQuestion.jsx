@@ -31,7 +31,6 @@ export default function CreateQuestion() {
             .from("questions")
             .insert({
                 title: form.title,
-                function_name: form.function_name,
                 language: form.language,
                 input_format: form.input_format,
                 output_format: form.output_format,
@@ -58,7 +57,6 @@ export default function CreateQuestion() {
 
             <div className="bg-black text-green-400 p-4 rounded font-mono space-y-2">
                 <p>Title: <input className="bg-black outline-none ml-2" onChange={e => setForm({ ...form, title: e.target.value })} /></p>
-                <p>Function Name: <input className="bg-black outline-none ml-2" onChange={e => setForm({ ...form, function_name: e.target.value })} /></p>
                 <p>
                     Language:
                     <select className="bg-black ml-2" onChange={e => setForm({ ...form, language: e.target.value })}>

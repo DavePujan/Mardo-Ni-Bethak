@@ -109,6 +109,17 @@ const AttemptQuiz = () => {
                                 </span>
                             </div>
 
+                            {q.image_url && (
+                                <div className="mb-6">
+                                    <img
+                                        src={q.image_url}
+                                        alt="Question Attachment"
+                                        className="max-w-full h-auto rounded-lg border border-gray-600 shadow-md"
+                                        style={{ maxHeight: '400px' }}
+                                    />
+                                </div>
+                            )}
+
                             {q.type === "mcq" && (
                                 <div className="space-y-3">
                                     {q.mcq_options.map((opt) => (

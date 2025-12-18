@@ -229,7 +229,6 @@ router.post("/problem", auth, teacherOnly, async (req, res) => {
         const { data, error } = await supabase.from("problems").insert({
             title,
             description,
-            function_name: functionName,
             language: language || "javascript",
             input_format: inputFormat,
             output_format: outputFormat,
@@ -287,11 +286,11 @@ router.post("/quiz/full", auth, teacherOnly, async (req, res) => {
                     title: q.question, // Frontend sends 'question' as title
                     type: q.type, // 'mcq' or 'code'
                     weightage: q.marks,
-                    function_name: q.functionName,
                     language: q.language,
                     input_format: q.inputFormat,
                     output_format: q.outputFormat,
-                    created_by: userId
+                    created_by: userId,
+                    image_url: q.image || null
                 })
                 .select()
                 .single();
