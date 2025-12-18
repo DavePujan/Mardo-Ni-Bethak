@@ -44,40 +44,30 @@ passport.use(
         async (accessToken, refreshToken, profile, done) => {
             try {
                 const email = profile.emails[0].value;
-                let userRole = "student";
 
-                // 1. Check Supabase for existing profile (ID & Role)
-                const { data: existingProfile } = await supabase.from("profiles").select("id, role").eq("email", email).single();
-
-                if (existingProfile) {
-                    userRole = existingProfile.role;
-                }
-
-                // 2. Setup User Object (Mock + Session)
+                // 1. Check if user exists in our valid User list
                 let user = await User.findOne({ email });
+
                 if (!user) {
-                    user = {
-                        id: User.findAll().length + 1,
-                        email: email,
-                        role: userRole,
-                        provider: "google",
-                        isVerified: true
-                    };
-                    User.push(user);
-                } else {
-                    user.role = userRole;
+                    // Fallback: Check Supabase (Persistence Layer)
+                    const { data: sbUser, error } = await supabase.from("profiles").select("*").eq("email", email).single();
+                    if (error) console.error(`[Passport] Supabase error:`, error.message);
+
+                    if (sbUser) {
+                        // User exists in DB, hydrate in-memory store
+                        user = {
+                            id: sbUser.id, // Use UUID from SB
+                            email: sbUser.email,
+                            role: sbUser.role,
+                            provider: sbUser.provider,
+                            isVerified: true
+                        };
+                        User.push(user);
+                    } else {
+                        // Really not found
+                        return done(null, false, { message: "User not found", email: email, provider: "google" });
+                    }
                 }
-
-                // 3. Sync/Ensure Profile Exists
-                const { error } = await supabase.from("profiles").upsert({
-                    id: existingProfile?.id || crypto.randomUUID(), // Fix: Ensure ID is present
-                    email: user.email,
-                    role: user.role,
-                    provider: user.provider,
-                    is_verified: true
-                }, { onConflict: 'email' });
-
-                if (error) console.error("❌ [Supabase] Sync Error:", error.message);
 
                 done(null, user);
             } catch (err) {
@@ -97,38 +87,27 @@ passport.use(
         async (accessToken, refreshToken, profile, done) => {
             try {
                 const email = profile.emails?.[0]?.value || `${profile.username}@github.com`;
-                let userRole = "student";
 
-                // 1. Check Supabase
-                const { data: existingProfile } = await supabase.from("profiles").select("id, role").eq("email", email).single();
-                if (existingProfile) {
-                    userRole = existingProfile.role;
-                }
-
+                // 1. Check if user exists
                 let user = await User.findOne({ email });
+
                 if (!user) {
-                    user = {
-                        id: User.findAll().length + 1,
-                        email,
-                        role: userRole,
-                        provider: "github",
-                        isVerified: false,
-                        verificationToken: crypto.randomBytes(32).toString("hex")
-                    };
-                    User.push(user);
-                } else {
-                    user.role = userRole;
+                    // Fallback: Check Supabase
+                    const { data: sbUser } = await supabase.from("profiles").select("*").eq("email", email).single();
+
+                    if (sbUser) {
+                        user = {
+                            id: sbUser.id,
+                            email: sbUser.email,
+                            role: sbUser.role,
+                            provider: sbUser.provider,
+                            isVerified: true
+                        };
+                        User.push(user);
+                    } else {
+                        return done(null, false, { message: "User not found", email: email, provider: "github" });
+                    }
                 }
-
-                // 3. Sync
-                const { error } = await supabase.from("profiles").upsert({
-                    id: existingProfile?.id || crypto.randomUUID(), // Fix: Ensure ID is present
-                    email: user.email,
-                    role: user.role,
-                    provider: user.provider
-                }, { onConflict: 'email' });
-
-                if (error) console.error("❌ [Supabase] Sync Error:", error.message);
 
                 done(null, user);
             } catch (err) {

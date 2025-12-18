@@ -17,7 +17,9 @@ export default function Login() {
         const role = searchParams.get("role");
         if (token && role) {
             login(token, role);
-            navigate("/");
+            if (role === 'teacher') navigate("/teacher");
+            else if (role === 'admin') navigate("/admin");
+            else navigate("/");
         }
     }, [searchParams, login, navigate]);
 
@@ -35,9 +37,25 @@ export default function Login() {
             else navigate("/");
 
         } catch (err) {
-            setError(err.response?.data?.error || "Login failed");
+            if (err.response?.data?.requestAccess) {
+                setError(<span style={{ margin: 0 }}>User not found. <a href="/request-access" style={{ color: "blue", cursor: "pointer" }}>Request Access</a></span>);
+            } else {
+                setError(err.response?.data?.error || "Login failed");
+            }
         }
     }
+
+    // Check URL for error params (from OAuth redirect)
+    useEffect(() => {
+        const err = searchParams.get("error");
+        if (err === "not_found") {
+            setError(
+                <span>
+                    User not found. <a href={`/request-access?email=${searchParams.get("email")}&provider=${searchParams.get("provider")}`} style={{ color: "blue" }}>Request Access</a>
+                </span>
+            );
+        }
+    }, [searchParams]);
 
     return (
         <div style={{ padding: "2rem" }}>

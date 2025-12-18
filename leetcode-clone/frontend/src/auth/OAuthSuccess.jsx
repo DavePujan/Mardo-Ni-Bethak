@@ -13,8 +13,11 @@ export default function OAuthSuccess() {
 
         if (token && role) {
             login(token, role);
-            // Wait a moment or direct redirect
-            setTimeout(() => navigate("/"), 500);
+
+            // Redirect based on role
+            if (role === 'teacher') setTimeout(() => navigate("/teacher"), 500);
+            else if (role === 'admin') setTimeout(() => navigate("/admin"), 500);
+            else setTimeout(() => navigate("/"), 500);
         } else {
             navigate("/login");
         }

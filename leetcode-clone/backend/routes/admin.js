@@ -1,7 +1,57 @@
 const router = require("express").Router();
 const { auth, adminOnly } = require("../middleware/auth");
 const User = require("../models/User");
+const AccessRequest = require("../models/AccessRequest");
+const crypto = require("crypto");
 
+
+
+router.get("/requests", auth, adminOnly, (req, res) => {
+    res.json(AccessRequest.findAll());
+});
+
+router.post("/approve-request", auth, adminOnly, async (req, res) => {
+    const { email } = req.body;
+
+    // 1. Find Request
+    const reqData = AccessRequest.find(r => r.email === email);
+    if (!reqData) return res.status(404).json({ error: "Request not found" });
+
+    // 2. Create User
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(400).json({ error: "User already exists" });
+
+    const newUser = {
+        id: User.findAll().length + 1,
+        email: reqData.email,
+        role: reqData.role,
+        provider: reqData.provider,
+        isVerified: true // Admin approved
+    };
+    User.push(newUser);
+
+    // 3. Sync to Supabase
+    try {
+        const { data: existingProfile } = await supabase.from("profiles").select("id").eq("email", email).single();
+
+        const { error } = await supabase.from("profiles").upsert({
+            id: existingProfile?.id || crypto.randomUUID(),
+            email: newUser.email,
+            role: newUser.role,
+            provider: newUser.provider,
+            is_verified: true
+        }, { onConflict: 'email' });
+
+        if (error) console.error("Supabase sync error:", error);
+    } catch (err) {
+        console.error("Supabase sync exception:", err);
+    }
+
+    // 4. Remove Request
+    AccessRequest.remove(email);
+
+    res.json({ message: "Access request approved & user created." });
+});
 
 router.get("/dashboard", auth, adminOnly, async (req, res) => {
     try {

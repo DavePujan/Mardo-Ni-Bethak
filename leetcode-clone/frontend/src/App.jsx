@@ -7,6 +7,8 @@ import { AuthProvider, AuthContext } from "./context/AuthContext";
 import { useContext } from "react";
 import "./styles/common.css";
 
+import RequestAccess from "./auth/RequestAccess";
+
 // Student Page
 import Leaderboard from "./pages/student/Leaderboard";
 import ActiveQuizzes from "./pages/student/ActiveQuizzes";
@@ -73,6 +75,7 @@ export default function App() {
         <NavBar />
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/request-access" element={<RequestAccess />} />
           <Route path="/oauth-success" element={<OAuthSuccess />} />
 
           {/* Student / Public */}
