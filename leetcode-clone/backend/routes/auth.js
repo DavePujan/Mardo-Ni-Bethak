@@ -11,7 +11,7 @@ const AccessRequest = require("../models/AccessRequest");
 
 router.post("/login", async (req, res) => {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    let user = await User.findOne({ email });
 
     if (!user) {
         // Fallback: Check Supabase
@@ -53,24 +53,45 @@ router.post("/login", async (req, res) => {
     res.json({ token, role: user.role });
 });
 
+const { createClient } = require("@supabase/supabase-js");
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
 router.post("/request-access", async (req, res) => {
-    const { email, role, name, provider } = req.body;
+    const { email, role, name, provider, department } = req.body;
 
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ error: "User already exists. Please login." });
+    try {
+        // 1. Check if user already exists
+        const { data: existingUser } = await supabase.from("profiles").select("id").eq("email", email).single();
+        if (existingUser) return res.status(400).json({ error: "User already exists. Please login." });
 
-    const existingReq = AccessRequest.find(r => r.email === email);
-    if (existingReq) return res.status(400).json({ error: "Request already pending." });
+        // 2. Check if request already pending
+        const { data: existingReq } = await supabase.from("access_requests").select("id").eq("email", email).single();
+        if (existingReq) return res.status(400).json({ error: "Request already pending." });
 
-    AccessRequest.push({
-        email,
-        role,
-        name,
-        provider: provider || "local",
-        date: new Date()
-    });
+        // 3. Hash Password (if provided)
+        let hashedPassword = null;
+        if (req.body.password) {
+            hashedPassword = await bcrypt.hash(req.body.password, 10);
+        }
 
-    res.json({ message: "Access request submitted. Please wait for admin approval." });
+        // 4. Create Request
+        const { error } = await supabase.from("access_requests").insert({
+            email,
+            name: name || null,
+            role,
+            department: department || null,
+            provider: provider || "local",
+            password: hashedPassword, // Store hashed password
+            status: "pending"
+        });
+
+        if (error) throw error;
+
+        res.json({ message: "Access request submitted. Please wait for admin approval." });
+    } catch (err) {
+        console.error("Request Access Error:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 router.post("/refresh", (req, res) => {
@@ -87,7 +108,7 @@ router.post("/refresh", (req, res) => {
 });
 
 // OAuth Routes
-router.get("/google", passport.authenticate("google", { scope: ["email", "profile"] }));
+router.get("/google", passport.authenticate("google", { scope: ["email", "profile"], prompt: "select_account" }));
 router.get("/google/callback", (req, res, next) => {
     passport.authenticate("google", { session: false }, (err, user, info) => {
         if (err) return next(err);

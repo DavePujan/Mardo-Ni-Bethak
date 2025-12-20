@@ -1,6 +1,16 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE public.access_requests (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  email text NOT NULL UNIQUE,
+  role text NOT NULL,
+  department text,
+  provider text NOT NULL,
+  status text DEFAULT 'pending'::text,
+  created_at timestamp without time zone DEFAULT now(),
+  CONSTRAINT access_requests_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.audit_logs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   action text,
@@ -33,6 +43,7 @@ CREATE TABLE public.profiles (
   provider text,
   is_verified boolean DEFAULT false,
   created_at timestamp without time zone DEFAULT now(),
+  department text,
   CONSTRAINT profiles_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.question_bank (
@@ -50,7 +61,6 @@ CREATE TABLE public.question_bank (
 CREATE TABLE public.questions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   title text NOT NULL,
-  function_name text,
   language text,
   input_format text,
   output_format text,

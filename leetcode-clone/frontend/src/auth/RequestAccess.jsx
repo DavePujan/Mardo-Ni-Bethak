@@ -8,7 +8,9 @@ export default function RequestAccess() {
 
     const [email, setEmail] = useState("");
     const [name, setName] = useState("");
+    const [password, setPassword] = useState("");
     const [role, setRole] = useState("student");
+    const [department, setDepartment] = useState("");
     const [provider, setProvider] = useState("local");
 
     const [msg, setMsg] = useState("");
@@ -28,7 +30,7 @@ export default function RequestAccess() {
 
         try {
             const res = await axios.post("http://localhost:5000/auth/request-access", {
-                email, name, role, provider
+                email, name, role, department, provider, password
             });
             setMsg(res.data.message);
             // Optionally redirect after some time
@@ -71,6 +73,40 @@ export default function RequestAccess() {
                 </div>
 
                 <div style={{ marginBottom: "15px" }}>
+                    <label style={{ display: "block", marginBottom: "5px" }}>Password (for manual login)</label>
+                    <input
+                        type="password"
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        placeholder="Set a password"
+                        required={provider === 'local'} // Required only for local requests
+                        style={{ width: "100%", padding: "8px" }}
+                    />
+                </div>
+
+                <div style={{ marginBottom: "15px" }}>
+                    <label style={{ display: "block", marginBottom: "5px" }}>Department</label>
+                    <select
+                        value={department}
+                        onChange={e => setDepartment(e.target.value)}
+                        style={{ width: "100%", padding: "8px" }}
+                    >
+                        <option value="">Select Department</option>
+                        <option value="Biomedical Engineering">Biomedical Engineering</option>
+                        <option value="Computer Engineering">Computer Engineering</option>
+                        <option value="Electronics & Communication Engineering">Electronics & Communication Engineering</option>
+                        <option value="General Department">General Department</option>
+                        <option value="Information Technology">Information Technology</option>
+                        <option value="Instrumentation & Control Engineering">Instrumentation & Control Engineering</option>
+                        <option value="Metallurgy Engineering">Metallurgy Engineering</option>
+                        <option value="Mechanical Engineering">Mechanical Engineering</option>
+                        <option value="Civil Engineering">Civil Engineering</option>
+                        <option value="Robotics and Automation Engineering">Robotics and Automation Engineering</option>
+                        <option value="Electrical Engineering">Electrical Engineering</option>
+                    </select>
+                </div>
+
+                <div style={{ marginBottom: "15px" }}>
                     <label style={{ display: "block", marginBottom: "5px" }}>Role</label>
                     <select
                         value={role}
@@ -79,6 +115,7 @@ export default function RequestAccess() {
                     >
                         <option value="student">Student</option>
                         <option value="teacher">Teacher</option>
+                        <option value="admin">Admin</option>
                     </select>
                 </div>
 

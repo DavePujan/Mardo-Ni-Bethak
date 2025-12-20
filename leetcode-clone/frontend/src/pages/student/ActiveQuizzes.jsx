@@ -53,9 +53,16 @@ const ActiveQuizzes = () => {
                                 </span>
                             </div>
 
-                            <p className="text-gray-400 mb-6 line-clamp-2 h-12">
+                            <p className="text-gray-400 mb-2 line-clamp-2 h-12">
                                 {quiz.description || "No description provided."}
                             </p>
+
+                            <div className="text-sm text-gray-500 mb-6 flex items-center gap-2">
+                                <span className="bg-gray-700 px-2 py-0.5 rounded text-xs text-gray-300">Created by</span>
+                                <span className="text-blue-400 font-medium">
+                                    {quiz.creator?.full_name || "Teacher"}
+                                </span>
+                            </div>
 
                             <div className="flex justify-between items-center text-sm text-gray-400 mb-6">
                                 <div className="flex flex-col">

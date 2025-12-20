@@ -9,7 +9,10 @@ router.get("/quizzes", auth, async (req, res) => {
     try {
         const { data: quizzes, error } = await supabase
             .from("quizzes")
-            .select("*")
+            // Join with profiles using the foreign key 'created_by'
+            // Syntax: select(*, alias:referenced_table!fk_check(cols))
+            // Assuming simplified FK detection or explicit join:
+            .select("*, creator:profiles!created_by(full_name, email)")
             .order("created_at", { ascending: false });
 
         console.log(`[Student] Fetching quizzes for ${req.user.email} (ID: ${req.user.id})`);
@@ -47,26 +50,21 @@ router.get("/quizzes", auth, async (req, res) => {
         if (req.query.includeAttempted === "true") {
             // Fetching for history/leaderboard: Show everything
         } else {
-            // Fetching for Active Quizzes page:
-            // Hide if:
-            // 1. Status is 'submitted' or 'evaluated' (Already taken)
-            // 2. Quiz is NOT active (Teacher ended it) AND User has NOT taken it (Status is 'not_started' or 'in_progress'?? If in_progress and ended, user might be blocked?)
-            // Let's simplified: Show if active=true OR status=submitted (history).
-            // Wait, Active Quizzes page should ONLY show what I CAN take.
-            // History page (if exists) shows what I HAVE taken.
-            // User Request: "if its ended then it will be removed from active section ... if student have attempted it then and then it will show in students history"
-
-            // So for "Active Quizzes" endpoint:
-            // Must be is_active = true AND status = 'not_started'
-
             quizzesWithStatus = quizzesWithStatus.filter(q => {
                 const isTaken = q.status === "submitted" || q.status === "evaluated";
+
+                // Enhanced Logic: Handle string "false" if DB returns JSON strings, though unlikely with Supabase JS
+                // But strict check is active !== false.
+                const isActive = q.is_active !== false;
+
                 if (isTaken) return false; // Don't show in active list if taken
 
                 // If not taken, only show if active
-                return q.is_active !== false; // Handle null as true/legacy
+                return isActive;
             });
         }
+
+        console.log(`[Student] Returning ${quizzesWithStatus.length} active quizzes.`);
 
         res.json(quizzesWithStatus);
     } catch (err) {
@@ -131,7 +129,7 @@ router.get("/quiz/:id", auth, async (req, res) => {
         // Fetch Quiz Metadata
         const { data: quiz, error: quizError } = await supabase
             .from("quizzes")
-            .select("*")
+            .select("*, creator:profiles!created_by(full_name, email)")
             .eq("id", id)
             .single();
 
@@ -144,7 +142,7 @@ router.get("/quiz/:id", auth, async (req, res) => {
                 question_id,
                 weightage,
                 question:questions (
-                    id, title, type, language, input_format, output_format, function_name, image_url,
+                    id, title, type, language, input_format, output_format, image_url,
                     mcq_options (id, option_text)
                 )
             `)

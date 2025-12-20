@@ -63,4 +63,6 @@ export const updateSettings = (settings) => api.post("/api/admin/settings", sett
 
 export const createFullQuiz = (data) => api.post("/api/teacher/quiz/full", data);
 
+export const deleteUser = (email) => api.delete("/api/admin/user", { data: { email } });
+
 export default api;

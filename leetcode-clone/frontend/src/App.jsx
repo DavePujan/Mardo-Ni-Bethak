@@ -26,6 +26,7 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import UserManagement from "./pages/admin/UserManagement";
 import AuditLogs from "./pages/admin/AuditLogs";
 import AdminSettings from "./pages/admin/AdminSettings";
+import AdminRequests from "./pages/admin/AdminRequests";
 
 
 function NavBar() {
@@ -53,6 +54,7 @@ function NavBar() {
         {role === "admin" && (
           <>
             <Link to="/admin" style={{ marginRight: "10px" }}>Dashboard</Link>
+            <Link to="/admin/requests" style={{ marginRight: "10px" }}>Requests</Link>
             <Link to="/admin/users" style={{ marginRight: "10px" }}>Users</Link>
           </>
         )}
@@ -115,6 +117,7 @@ export default function App() {
 
           {/* Admin Routes */}
           <Route path="/admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/requests" element={<ProtectedRoute role="admin"><AdminRequests /></ProtectedRoute>} />
           <Route path="/admin/users" element={<ProtectedRoute role="admin"><UserManagement /></ProtectedRoute>} />
           <Route path="/admin/logs" element={<ProtectedRoute role="admin"><AuditLogs /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute role="admin"><AdminSettings /></ProtectedRoute>} />

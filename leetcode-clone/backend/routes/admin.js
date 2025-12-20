@@ -1,4 +1,7 @@
 const router = require("express").Router();
+const { createClient } = require("@supabase/supabase-js");
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
 const { auth, adminOnly } = require("../middleware/auth");
 const User = require("../models/User");
 const AccessRequest = require("../models/AccessRequest");
@@ -6,51 +9,81 @@ const crypto = require("crypto");
 
 
 
-router.get("/requests", auth, adminOnly, (req, res) => {
-    res.json(AccessRequest.findAll());
+router.get("/requests", auth, adminOnly, async (req, res) => {
+    try {
+        console.log("Fetching pending access requests...");
+        const { data, error } = await supabase
+            .from("access_requests")
+            .select("*")
+            .eq("status", "pending")
+            .order("created_at", { ascending: false });
+
+        if (error) {
+            console.error("Supabase Error fetching requests:", error);
+            throw error;
+        }
+
+        console.log("Pending Requests Found:", data?.length, data);
+        res.json(data);
+    } catch (err) {
+        console.error("Route Error:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 router.post("/approve-request", auth, adminOnly, async (req, res) => {
     const { email } = req.body;
 
-    // 1. Find Request
-    const reqData = AccessRequest.find(r => r.email === email);
-    if (!reqData) return res.status(404).json({ error: "Request not found" });
-
-    // 2. Create User
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(400).json({ error: "User already exists" });
-
-    const newUser = {
-        id: User.findAll().length + 1,
-        email: reqData.email,
-        role: reqData.role,
-        provider: reqData.provider,
-        isVerified: true // Admin approved
-    };
-    User.push(newUser);
-
-    // 3. Sync to Supabase
     try {
+        // 1. Fetch Request
+        const { data: reqData, error: fetchError } = await supabase
+            .from("access_requests")
+            .select("*")
+            .eq("email", email)
+            .single();
+
+        if (fetchError || !reqData) return res.status(404).json({ error: "Request not found" });
+
+        // 2. Insert into Profiles (Create User)
+        // Check if profile exists (maybe created via OAuth just now?)
         const { data: existingProfile } = await supabase.from("profiles").select("id").eq("email", email).single();
 
-        const { error } = await supabase.from("profiles").upsert({
-            id: existingProfile?.id || crypto.randomUUID(),
-            email: newUser.email,
-            role: newUser.role,
-            provider: newUser.provider,
+        const profileData = {
+            id: existingProfile?.id || crypto.randomUUID(), // Preserve ID if exists
+            email: reqData.email,
+            role: reqData.role,
+            department: reqData.department, // Transfer department
+            provider: reqData.provider,
+            full_name: reqData.name || null, // Transfer name
+            password: reqData.password || null, // Transfer hashed password
             is_verified: true
-        }, { onConflict: 'email' });
+        };
 
-        if (error) console.error("Supabase sync error:", error);
+        const { error: upsertError } = await supabase
+            .from("profiles")
+            .upsert(profileData, { onConflict: 'email' });
+
+        if (upsertError) throw upsertError;
+
+        // 3. Delete Request (or update status to approved)
+        // Let's delete to keep table clean as per user wish "shifted"
+        const { error: deleteError } = await supabase
+            .from("access_requests")
+            .delete()
+            .eq("email", email);
+
+        if (deleteError) throw deleteError;
+
+        // Update local memory if still using it for quick lookups (optional but safer)
+        // const newUser = { ...profileData, id: profileData.id, isVerified: true };
+        // User.push(newUser); // simplified sync
+
+        res.json({ message: "Access request approved & user created." });
+
     } catch (err) {
-        console.error("Supabase sync exception:", err);
+        console.error("Approve Request Error:", err);
+        res.status(500).json({ error: err.message });
     }
-
-    // 4. Remove Request
-    AccessRequest.remove(email);
-
-    res.json({ message: "Access request approved & user created." });
 });
 
 router.get("/dashboard", auth, adminOnly, async (req, res) => {
@@ -83,9 +116,6 @@ router.get("/dashboard", auth, adminOnly, async (req, res) => {
     }
 });
 
-const { createClient } = require("@supabase/supabase-js");
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-
 router.get("/users", auth, adminOnly, async (req, res) => {
     try {
         const { data, error } = await supabase.from("profiles").select("*");
@@ -107,7 +137,7 @@ router.patch("/user/role", auth, adminOnly, async (req, res) => {
 
 router.patch("/promote", auth, adminOnly, async (req, res) => {
     const { email, role } = req.body;
-    if (!["teacher", "admin"].includes(role)) {
+    if (!["teacher", "admin", "student"].includes(role)) {
         return res.status(400).json({ error: "Invalid role" });
     }
 
@@ -122,6 +152,46 @@ router.patch("/promote", auth, adminOnly, async (req, res) => {
     if (!data || data.length === 0) return res.status(404).json({ error: "User not found in database" });
 
     res.json({ message: "Role updated" });
+});
+
+router.post("/reject-request", auth, adminOnly, async (req, res) => {
+    const { email } = req.body;
+
+    try {
+        const { error } = await supabase
+            .from("access_requests")
+            .delete()
+            .eq("email", email);
+
+        if (error) throw error;
+
+        res.json({ message: "Access request rejected and removed." });
+    } catch (err) {
+        console.error("Reject Request Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.delete("/user", auth, adminOnly, async (req, res) => {
+    const { email } = req.body;
+
+    try {
+        const { error } = await supabase
+            .from("profiles")
+            .delete()
+            .eq("email", email);
+
+        if (error) throw error;
+
+        // Also delete from users array if using mock (optional cleanup)
+        // const idx = User.findIndex(u => u.email === email);
+        // if (idx >= 0) User.splice(idx, 1);
+
+        res.json({ message: "User removed successfully." });
+    } catch (err) {
+        console.error("Delete User Error:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 module.exports = router;

@@ -93,6 +93,7 @@ const AttemptQuiz = () => {
                     <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
                         {quiz.title}
                     </h1>
+                    <p className="text-gray-400 mt-1 text-sm">Created by: <span className="text-white">{quiz.creator?.full_name || 'Unknown'}</span></p>
                     <div className="flex justify-between mt-2 text-gray-400">
                         <span>Duration: {quiz.duration} mins</span>
                         <span>Total Marks: {quiz.total_marks}</span>
@@ -151,13 +152,26 @@ const AttemptQuiz = () => {
                                             language={q.language || "javascript"}
                                             code={answers[q.id]?.submittedCode || ""}
                                             setCode={(val) => handleCodeChange(q.id, val)}
-                                            template={
-                                                q.language === "python"
-                                                    ? `def ${q.function_name || "solution"}(${q.input_format || ""}):\n    # Write your code here\n    pass`
-                                                    : q.language === "cpp"
-                                                        ? `auto ${q.function_name || "solution"}(${q.input_format || ""}) {\n    // Write your code here\n}`
-                                                        : `function ${q.function_name || "solution"}(${q.input_format || ""}) {\n    // Write your code here\n}`
-                                            }
+                                            template={(() => {
+                                                // Helper to format input params e.g. "a b" -> "a, b"
+                                                const formatParams = (fmt) => {
+                                                    if (!fmt) return "";
+                                                    // If contains commas, assume it's already correct
+                                                    if (fmt.includes(",")) return fmt;
+                                                    // Split by whitespace and join with comma
+                                                    return fmt.trim().split(/\s+/).join(", ");
+                                                };
+                                                const params = formatParams(q.input_format);
+                                                const funcName = q.function_name || "solution";
+
+                                                if (q.language === "python") {
+                                                    return `def ${funcName}(${params}):\n    # Write your code here\n    pass`;
+                                                } else if (q.language === "cpp") {
+                                                    return `auto ${funcName}(${params}) {\n    // Write your code here\n}`;
+                                                } else {
+                                                    return `function ${funcName}(${params}) {\n    // Write your code here\n}`;
+                                                }
+                                            })()}
                                             width="100%"
                                         />
                                     </div>

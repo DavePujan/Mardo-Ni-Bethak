@@ -7,6 +7,8 @@ export default function CreateQuiz() {
     const [quizDetails, setQuizDetails] = useState({
         title: "",
         subject: "",
+        department: "",
+        semester: "",
         duration: "",
         totalMarks: "",
         description: ""
@@ -14,6 +16,7 @@ export default function CreateQuiz() {
 
     // List of Questions
     const [questions, setQuestions] = useState([]);
+    const [submitting, setSubmitting] = useState(false);
 
     // Current Question Form State
     const [currentQ, setCurrentQ] = useState({
@@ -85,16 +88,52 @@ export default function CreateQuiz() {
     };
 
     const handleSubmit = async () => {
+        if (questions.length === 0) {
+            alert("Please add at least one question.");
+            return;
+        }
+        // Validation: All fields required except description
+        if (!quizDetails.title || !quizDetails.subject || !quizDetails.department || !quizDetails.semester || !quizDetails.duration || !quizDetails.totalMarks) {
+            alert("Please fill in all Quiz Details (Title, Subject, Department, Semester, Duration, Total Marks).");
+            return;
+        }
+
+        setSubmitting(true);
         try {
+            // Process questions: Upload images if they are File objects
+            const processedQuestions = await Promise.all(questions.map(async (q) => {
+                if (q.image && q.image instanceof File) {
+                    const fileName = `${Date.now()}_${q.image.name}`;
+                    const { error } = await supabase.storage
+                        .from("quiz_images")
+                        .upload(fileName, q.image);
+
+                    if (error) throw error;
+
+                    const { data } = supabase.storage
+                        .from("quiz_images")
+                        .getPublicUrl(fileName);
+
+                    return { ...q, image: data.publicUrl };
+                }
+                return q; // Already a URL or empty
+            }));
+
             const payload = {
                 ...quizDetails,
-                questions
+                questions: processedQuestions
             };
+
             await createFullQuiz(payload);
             alert("Quiz and Questions Created Successfully!");
-            // Redirect or Clear?
+            // Optional: Redirect or reset
+            setQuestions([]);
+            setQuizDetails({ title: "", subject: "", department: "", semester: "", duration: "", totalMarks: "", description: "" });
         } catch (error) {
+            console.error(error);
             alert("Error creating quiz: " + (error.response?.data?.error || error.message));
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -108,6 +147,29 @@ export default function CreateQuiz() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input name="title" placeholder="Quiz Title" value={quizDetails.title} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white" />
                     <input name="subject" placeholder="Subject" value={quizDetails.subject} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white" />
+
+                    <select name="department" value={quizDetails.department} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white">
+                        <option value="">Select Department</option>
+                        <option value="CS">Computer Science</option>
+                        <option value="IT">Information Technology</option>
+                        <option value="ECE">Electronics & Communication</option>
+                        <option value="EE">Electrical Engineering</option>
+                        <option value="ME">Mechanical Engineering</option>
+                        <option value="CE">Civil Engineering</option>
+                    </select>
+
+                    <select name="semester" value={quizDetails.semester} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white">
+                        <option value="">Select Semester</option>
+                        <option value="1st">1st Semester</option>
+                        <option value="2nd">2nd Semester</option>
+                        <option value="3rd">3rd Semester</option>
+                        <option value="4th">4th Semester</option>
+                        <option value="5th">5th Semester</option>
+                        <option value="6th">6th Semester</option>
+                        <option value="7th">7th Semester</option>
+                        <option value="8th">8th Semester</option>
+                    </select>
+
                     <input name="duration" placeholder="Duration (mins)" type="number" value={quizDetails.duration} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white" />
                     <input name="totalMarks" placeholder="Total Marks" type="number" value={quizDetails.totalMarks} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white" />
                     <textarea name="description" placeholder="Description" value={quizDetails.description} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white col-span-2 h-20" />
@@ -160,7 +222,7 @@ export default function CreateQuiz() {
                             </select>
                         </div>
                         <div className="grid grid-cols-2 gap-4 mb-4">
-                            <input placeholder="Input Format (e.g. a b)" value={currentQ.inputFormat} onChange={e => handleQChange("inputFormat", e.target.value)} className="input bg-[#252526] border-gray-600 text-white" />
+                            <input placeholder="Input Format (e.g. a, b)" value={currentQ.inputFormat} onChange={e => handleQChange("inputFormat", e.target.value)} className="input bg-[#252526] border-gray-600 text-white" />
                             <input placeholder="Output Format (e.g. sum)" value={currentQ.outputFormat} onChange={e => handleQChange("outputFormat", e.target.value)} className="input bg-[#252526] border-gray-600 text-white" />
                         </div>
 
@@ -184,7 +246,9 @@ export default function CreateQuiz() {
                             <label className="block mb-1 text-gray-400">Optional Image:</label>
                             {currentQ.image ? (
                                 <div className="flex items-center gap-4 bg-[#252526] p-2 rounded border border-green-500">
-                                    <span className="text-green-400 text-sm truncate max-w-xs">{currentQ.image}</span>
+                                    <span className="text-green-400 text-sm truncate max-w-xs">
+                                        {currentQ.image instanceof File ? currentQ.image.name : "Image Uploaded"}
+                                    </span>
                                     <button
                                         onClick={() => handleQChange("image", "")}
                                         className="text-red-400 hover:text-red-300 text-sm font-bold"
@@ -195,30 +259,14 @@ export default function CreateQuiz() {
                             ) : (
                                 <div>
                                     <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded inline-flex items-center transition">
-                                        <span>+ Upload Image</span>
+                                        <span>+ Select Image</span>
                                         <input
                                             type="file"
                                             className="hidden"
                                             accept="image/*"
-                                            onChange={async (e) => {
-                                                const file = e.target.files[0];
-                                                if (!file) return;
-
-                                                try {
-                                                    const fileName = `${Date.now()}_${file.name}`;
-                                                    const { data, error } = await supabase.storage
-                                                        .from("quiz_images")
-                                                        .upload(fileName, file);
-
-                                                    if (error) throw error;
-
-                                                    const { data: publicUrlData } = supabase.storage
-                                                        .from("quiz_images")
-                                                        .getPublicUrl(fileName);
-
-                                                    handleQChange("image", publicUrlData.publicUrl);
-                                                } catch (err) {
-                                                    alert("Error uploading image: " + err.message);
+                                            onChange={(e) => {
+                                                if (e.target.files[0]) {
+                                                    handleQChange("image", e.target.files[0]);
                                                 }
                                             }}
                                         />
@@ -266,8 +314,15 @@ export default function CreateQuiz() {
             )}
 
             {/* Final Submit */}
-            <button onClick={handleSubmit} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg text-xl shadow-lg transition transform hover:scale-[1.01]">
-                🚀 Create Full Quiz
+            <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className={`w-full font-bold py-4 rounded-lg text-xl shadow-lg transition transform hover:scale-[1.01] ${submitting
+                    ? "bg-gray-600 cursor-wait"
+                    : "bg-green-600 hover:bg-green-700 text-white"
+                    }`}
+            >
+                {submitting ? "Uploading & Creating Quiz..." : "🚀 Create Full Quiz"}
             </button>
         </div>
     );
