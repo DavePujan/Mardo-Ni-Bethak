@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { updateSettings } from "../../utils/api";
+import React, { useState, useEffect } from "react";
+import { updateSettings, getSettings } from "../../utils/api";
 
 export default function AdminSettings() {
     const [settings, setSettings] = useState({
@@ -8,9 +8,27 @@ export default function AdminSettings() {
         maintenanceMode: false
     });
 
+    useEffect(() => {
+        loadSettings();
+    }, []);
+
+    const loadSettings = async () => {
+        try {
+            const res = await getSettings();
+            setSettings(res.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     const updateSettingsFn = async () => {
-        await updateSettings(settings);
-        alert("Settings Updated");
+        try {
+            await updateSettings(settings);
+            alert("Settings Updated");
+        } catch (err) {
+            console.error("Failed to update settings:", err);
+            alert("Failed to update settings: " + (err.response?.data?.error || err.message));
+        }
     };
 
     return (

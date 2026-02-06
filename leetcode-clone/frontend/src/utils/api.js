@@ -19,6 +19,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
     (response) => response,
     async (error) => {
+        if (error.response && error.response.status === 503) {
+            window.location.href = "/maintenance";
+            return Promise.reject(error);
+        }
+
         const originalRequest = error.config;
         if (error.response.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true;
@@ -56,9 +61,11 @@ export const getAdminStats = () => api.get("/api/admin/dashboard");
 
 export const getQuestionBank = () => api.get("/api/teacher/question-bank");
 export const saveQuizQuestions = (questions) => api.post("/api/teacher/quiz/questions", { questions });
+export const runCode = (quizId, data) => api.post(`/api/student/quiz/${quizId}/run`, data);
 export const getSubmissions = () => api.get("/api/teacher/submissions");
 
 export const getAuditLogs = () => api.get("/api/admin/logs");
+export const getSettings = () => api.get("/api/admin/settings");
 export const updateSettings = (settings) => api.post("/api/admin/settings", settings);
 
 export const createFullQuiz = (data) => api.post("/api/teacher/quiz/full", data);

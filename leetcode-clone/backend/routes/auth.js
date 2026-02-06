@@ -60,6 +60,33 @@ router.post("/request-access", async (req, res) => {
     const { email, role, name, provider, department } = req.body;
 
     try {
+        // 0. Check Settings
+        const { data: settingsData, error: settingsError } = await supabase.from("settings").select("*");
+
+        let allowRegistrations = true;
+        let allowTeachers = true;
+
+        if (settingsData) {
+            settingsData.forEach(item => {
+                if (item.key === 'allowRegistrations') allowRegistrations = item.value;
+                if (item.key === 'allowTeachers') allowTeachers = item.value;
+            });
+        }
+
+        // Logic:
+        // 1. If role is 'teacher', allow if allowTeachers is true.
+        // 2. If role is NOT 'teacher' (student/admin), allow only if allowRegistrations is true.
+
+        if (role === 'teacher') {
+            if (!allowTeachers) {
+                return res.status(403).json({ error: "Teacher registrations are currently disabled." });
+            }
+        } else {
+            if (!allowRegistrations) {
+                return res.status(403).json({ error: "New student registrations are currently disabled by the admin." });
+            }
+        }
+
         // 1. Check if user already exists
         const { data: existingUser } = await supabase.from("profiles").select("id").eq("email", email).single();
         if (existingUser) return res.status(400).json({ error: "User already exists. Please login." });
@@ -105,6 +132,25 @@ router.post("/refresh", (req, res) => {
     } catch (err) {
         res.status(403).json({ error: "Invalid refresh token" });
     }
+});
+
+router.post("/forgot-password", async (req, res) => {
+    const { email } = req.body;
+    // In a real app, verify email exists in DB here.
+
+    // Determining if user exists (Mock check for feedback)
+    const user = await User.findOne({ email });
+    if (!user) {
+        // Security: Don't reveal if user exists, but for dev we might want to know.
+        // return res.json({ message: "If this email exists, a reset link has been sent." });
+    }
+
+    // Since we don't have email service configured yet:
+    console.log(`[Mock Email] Password reset requested for: ${email}`);
+
+    return res.json({
+        message: "If an account exists for this email, we have sent a password reset link."
+    });
 });
 
 // OAuth Routes

@@ -10,25 +10,26 @@ const axiosInstance = axios.create({
     timeout: 10000
 });
 
-exports.run = async ({ source_code, language_id, expected_output, cpu_time_limit = 2, memory_limit = 128000 }) => {
+exports.run = async ({ source_code, language_id, stdin, expected_output, cpu_time_limit = 2, memory_limit = 128000 }) => {
     try {
+        const headers = { "Content-Type": "application/json" };
+        if (process.env.JUDGE0_API_KEY) {
+            headers["X-Auth-Token"] = process.env.JUDGE0_API_KEY;
+        }
+
         const res = await axiosInstance.post(
-            `${process.env.JUDGE0_URL}/submissions?wait=true`,
+            `${process.env.JUDGE0_API_URL}/submissions?wait=true`,
             {
                 source_code,
                 language_id,
+                stdin,
                 expected_output,
                 cpu_time_limit,
                 memory_limit,
                 enable_network: false,
                 max_processes_and_or_threads: 1
             },
-            {
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-Auth-Token": process.env.JUDGE0_TOKEN
-                }
-            }
+            { headers }
         );
         return res.data;
     } catch (err) {
@@ -42,22 +43,19 @@ exports.run = async ({ source_code, language_id, expected_output, cpu_time_limit
 
 exports.runBatch = async (submissions) => {
     try {
-        // Judge0 Batch endpoint requires array of submission objects
-        // and returns array of results
+        const headers = { "Content-Type": "application/json" };
+        if (process.env.JUDGE0_API_KEY) {
+            headers["X-Auth-Token"] = process.env.JUDGE0_API_KEY;
+        }
+
         const res = await axiosInstance.post(
-            `${process.env.JUDGE0_URL}/submissions/batch?wait=true`,
+            `${process.env.JUDGE0_API_URL}/submissions/batch?wait=true`,
             { submissions },
-            {
-                headers: {
-                    "Content-Type": "application/json",
-                    "X-Auth-Token": process.env.JUDGE0_TOKEN
-                }
-            }
+            { headers }
         );
         return res.data;
     } catch (err) {
         console.error("Judge0 Batch Error:", err.message);
-        // Fallback? If batch fails, return empty or error.
         return [];
     }
 };

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { supabase } from "../../lib/supabase";
-import { createFullQuiz } from "../../utils/api";
+import api, { createFullQuiz } from "../../utils/api";
 
 export default function CreateQuiz() {
     // Quiz Metadata
@@ -11,7 +11,8 @@ export default function CreateQuiz() {
         semester: "",
         duration: "",
         totalMarks: "",
-        description: ""
+        description: "",
+        scheduledAt: "" // New field
     });
 
     // List of Questions
@@ -33,6 +34,10 @@ export default function CreateQuiz() {
         answer: "",
         image: "" // Optional Image URL
     });
+
+
+
+    const [showAiSidebar, setShowAiSidebar] = useState(false);
 
     const handleQuizChange = (e) => setQuizDetails({ ...quizDetails, [e.target.name]: e.target.value });
 
@@ -139,7 +144,36 @@ export default function CreateQuiz() {
 
     return (
         <div className="p-8 max-w-5xl mx-auto bg-black min-h-screen text-gray-300 font-sans">
-            <h1 className="text-3xl font-bold mb-6 text-white border-b border-gray-700 pb-2">Create New Quiz</h1>
+            <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-2">
+                <h1 className="text-3xl font-bold text-white">Create New Quiz</h1>
+                <button 
+                    onClick={() => setShowAiSidebar(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded text-white font-bold hover:opacity-90 transition"
+                >
+                    <span>✨ Ask AI</span>
+                </button>
+            </div>
+
+            <AiSidebar 
+                isOpen={showAiSidebar}
+                onClose={() => setShowAiSidebar(false)}
+                onPopulateForm={(q) => {
+                        setCurrentQ({
+                            question: q.question,
+                            type: q.type.toLowerCase(),
+                            marks: q.marks || 5,
+                            language: q.language || "javascript",
+                            inputFormat: q.inputFormat || "",
+                            outputFormat: q.outputFormat || "",
+                            testCases: q.testCases || [{ input: "", output: "", isHidden: false }],
+                            options: q.options || ["", "", "", ""],
+                            answer: q.answer || "",
+                            image: ""
+                        });
+                        // Optional: Scroll to form
+                        document.querySelector("h2.text-blue-400")?.scrollIntoView({ behavior: "smooth" });
+                }}
+            />
 
             {/* Quiz Details Section */}
             <div className="bg-[#1e1e1e] p-6 rounded-lg mb-8 shadow-lg">
@@ -171,7 +205,20 @@ export default function CreateQuiz() {
                     </select>
 
                     <input name="duration" placeholder="Duration (mins)" type="number" value={quizDetails.duration} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white" />
-                    <input name="totalMarks" placeholder="Total Marks" type="number" value={quizDetails.totalMarks} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white" />
+                    <input name="totalMarks" type="number" placeholder="Total Marks" value={quizDetails.totalMarks} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white" />
+
+                    {/* Schedule Quiz */}
+                    <div className="flex flex-col">
+                        <label className="text-xs text-gray-500 mb-1 ml-1 uppercase font-bold tracking-wider">Schedule Start (Optional)</label>
+                        <input
+                            name="scheduledAt"
+                            type="datetime-local"
+                            min={new Date().toISOString().slice(0, 16)}
+                            value={quizDetails.scheduledAt}
+                            onChange={handleQuizChange}
+                            className="input bg-[#252526] border-gray-700 text-white"
+                        />
+                    </div>
                     <textarea name="description" placeholder="Description" value={quizDetails.description} onChange={handleQuizChange} className="input bg-[#252526] border-gray-700 text-white col-span-2 h-20" />
                 </div>
             </div>
@@ -324,6 +371,168 @@ export default function CreateQuiz() {
             >
                 {submitting ? "Uploading & Creating Quiz..." : "🚀 Create Full Quiz"}
             </button>
+        </div>
+    );
+}
+
+// AI Sidebar Component
+function AiSidebar({ onPopulateForm, onClose, isOpen }) {
+    const [prompt, setPrompt] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [generatedQuestions, setGeneratedQuestions] = useState([]);
+    const [expandedQ, setExpandedQ] = useState(null); // Track expanded details
+
+    // Key Management State
+    const [hasKey, setHasKey] = useState(null);
+    const [apiKeyInput, setApiKeyInput] = useState("");
+    const [keyLoading, setKeyLoading] = useState(true);
+
+    React.useEffect(() => {
+        // Only check if we haven't checked yet
+        if (hasKey === null) {
+            api.get("/api/teacher/settings/gemini-key")
+                .then(res => setHasKey(res.data.hasKey))
+                .catch(err => console.error("Key check failed", err))
+                .finally(() => setKeyLoading(false));
+        }
+    }, [hasKey]); 
+
+    const handleSaveKey = async () => {
+        if (!apiKeyInput.trim()) return;
+        setKeyLoading(true);
+        try {
+            await api.post("/api/teacher/settings/gemini-key", { apiKey: apiKeyInput });
+            setHasKey(true);
+        } catch (err) {
+            alert("Failed to save key: " + (err.response?.data?.error || err.message));
+        } finally {
+            setKeyLoading(false);
+        }
+    };
+
+    const handleGenerate = async () => {
+        if (!prompt.trim()) return;
+        setLoading(true);
+        try {
+            const res = await api.post("/api/teacher/ai/generate", { prompt });
+            setGeneratedQuestions(res.data.questions);
+            setExpandedQ(null); // Reset expansion
+        } catch (err) {
+            console.error(err);
+            alert("AI Generation failed: " + (err.response?.data?.error || err.message));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const toggleExpand = (i) => {
+        setExpandedQ(expandedQ === i ? null : i);
+    };
+
+    return (
+        <div className={`fixed right-0 top-0 h-full w-[500px] bg-[#18181b] border-l border-gray-700 shadow-2xl z-50 transform transition-transform duration-300 ease-in-out flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+            <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-[#252526]">
+                <h3 className="text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">✨ AI Assistant</h3>
+                <button onClick={onClose} className="text-gray-400 hover:text-white">✕</button>
+            </div>
+            
+            <div className="p-4 flex-1 overflow-y-auto">
+                {keyLoading ? (
+                    <div className="text-center text-gray-500 mt-10">Checking settings...</div>
+                ) : !hasKey ? (
+                    <div className="space-y-4">
+                        <div className="bg-yellow-900/20 border border-yellow-700/50 p-3 rounded text-sm text-yellow-200">
+                             Please enter your Gemini API Key.
+                        </div>
+                        <input 
+                            type="password"
+                            value={apiKeyInput}
+                            onChange={(e) => setApiKeyInput(e.target.value)}
+                            placeholder="Gemini API Key"
+                            className="w-full bg-[#2a2a2b] border border-gray-600 rounded p-3 text-sm text-white"
+                        />
+                         <button 
+                            onClick={handleSaveKey}
+                            disabled={!apiKeyInput.trim()}
+                            className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-bold text-sm"
+                        >
+                            Save API Key
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                        <div className="mb-4">
+                            <textarea 
+                                value={prompt}
+                                onChange={(e) => setPrompt(e.target.value)}
+                                placeholder="Describe your questions..."
+                                className="w-full bg-[#2a2a2b] border border-gray-600 rounded p-3 text-sm text-white h-32 resize-none"
+                            />
+                            <button 
+                                onClick={handleGenerate}
+                                disabled={loading || !prompt.trim()}
+                                className={`w-full mt-2 py-2 rounded font-bold text-sm transition ${loading ? 'bg-gray-700' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
+                            >
+                                {loading ? "Generating..." : "Generate Questions"}
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            {generatedQuestions.map((q, i) => (
+                                <div key={i} className="bg-[#2a2a2b] border border-gray-700 rounded p-3 relative group">
+                                    <div className="pr-16 cursor-pointer" onClick={() => toggleExpand(i)}>
+                                        <p className="font-semibold text-sm text-white">{q.question}</p>
+                                        <p className="text-xs text-gray-400 mt-1 uppercase font-bold">{q.type} • {q.marks} Marks</p>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="absolute top-2 right-2 flex gap-2">
+                                         <button 
+                                            onClick={() => onPopulateForm(q)}
+                                            className="bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white px-2 py-1 rounded text-xs font-bold transition"
+                                            title="Edit in Form"
+                                        >
+                                            Edit
+                                        </button>
+                                    </div>
+
+                                    {/* Expanded Details */}
+                                    {expandedQ === i && (
+                                        <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-300 space-y-2">
+                                            {q.type === 'mcq' && (
+                                                <>
+                                                    <p><span className="text-gray-500">Options:</span> {q.options?.join(", ")}</p>
+                                                    <p><span className="text-green-400">Answer:</span> {q.answer}</p>
+                                                </>
+                                            )}
+                                            {q.type === 'code' && (
+                                                <>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <p><span className="text-gray-500">Lang:</span> {q.language}</p>
+                                                        <p><span className="text-gray-500">Function:</span> <span className="text-mono text-yellow-500">{q.functionName || "N/A"}</span></p>
+                                                    </div>
+                                                    <p><span className="text-gray-500">Input:</span> {q.inputFormat}</p>
+                                                    <p><span className="text-gray-500">Output:</span> {q.outputFormat}</p>
+                                                    <div className="bg-[#202021] p-2 rounded">
+                                                        <p className="text-gray-500 mb-1">Test Cases:</p>
+                                                        {q.testCases?.map((tc, idx) => (
+                                                            <div key={idx} className="flex gap-2 font-mono text-[10px] text-green-400">
+                                                                <span>in: {tc.input}</span>
+                                                                <span>→</span>
+                                                                <span>out: {tc.output}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+            </div>
         </div>
     );
 }

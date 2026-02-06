@@ -1,5 +1,4 @@
-const Groq = require("groq-sdk");
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 // Helper: Safe JSON Parser
 function safeParseJSON(raw) {
@@ -11,9 +10,6 @@ function safeParseJSON(raw) {
 
         // Validate expected schema
         if (typeof parsed.logic_score !== "number" || parsed.logic_score < 0 || parsed.logic_score > 1) {
-            // Attempt to clamp or fix if it's close? Or just throw.
-            // Let's be strict as per requirements, or maybe lenient if it's > 1 (normalize)?
-            // User asked for 0-1.
             if (parsed.logic_score > 1 && parsed.logic_score <= 10) parsed.logic_score /= 10; // Auto-fix 0-10 to 0-1
         }
         return parsed;
@@ -22,8 +18,16 @@ function safeParseJSON(raw) {
     }
 }
 
-exports.analyzeCode = async ({ code, question, language, input_format, output_format, max_marks }) => {
+exports.analyzeCode = async ({ code, question, language, input_format, output_format, max_marks, apiKey }) => {
     try {
+        if (!apiKey) throw new Error("Gemini API Key is required.");
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({
+            model: "gemini-flash-latest",
+            generationConfig: { responseMimeType: "application/json" } // Force JSON mode
+        });
+
         const prompt = `
 You are an academic code evaluator for beginners.
 
@@ -52,25 +56,10 @@ Return ONLY a valid JSON object with EXACT keys:
   "feedback": "Short, student-friendly explanation",
   "suggestions": "Simple improvement tips or empty string"
 }
-
-IMPORTANT:
-- Do NOT include markdown.
-- Do NOT include extra text.
-- Output ONLY JSON.
 `;
 
-        const completion = await groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.1,
-            messages: [
-                { role: "system", content: "Return only valid JSON." },
-                { role: "user", content: prompt }
-            ],
-            response_format: { type: "json_object" },
-            // timeout: 10000 // Groq SDK might not support timeout directly in create options, use axios signal if needed, but SDK defaults are usually fine.
-        });
-
-        const raw = completion.choices[0]?.message?.content;
+        const result = await model.generateContent(prompt);
+        const raw = result.response.text();
         const parsed = safeParseJSON(raw);
 
         if (!parsed) throw new Error("Invalid AI response: " + raw);
@@ -78,12 +67,123 @@ IMPORTANT:
         return parsed;
 
     } catch (err) {
-        console.error("Groq AI Error:", err.message);
+        console.error("Gemini AI Error:", err.message);
         // Fallback
         return {
             logic_score: 0,
-            feedback: "AI evaluation skipped due to system error.",
+            feedback: "AI evaluation skipped due to system error: " + err.message,
             suggestions: ""
         };
+    }
+};
+
+exports.generateQuiz = async ({ prompt, apiKey }) => {
+    try {
+        if (!apiKey) throw new Error("Gemini API Key is required.");
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({
+            model: "gemini-flash-latest",
+            generationConfig: { responseMimeType: "application/json" } // Force JSON mode
+        });
+
+        const aiPrompt = `
+You are a quiz generation assistant.
+User Request: "${prompt}"
+
+Generate a list of questions based on the user's request. 
+Format the output as a valid JSON array of objects.
+
+Each object should follow this schema:
+{
+  "question": "Question text...",
+  "type": "mcq" | "code",
+  "marks": number,
+  "options": ["Opt1", "Opt2", "Opt3", "Opt4"], // Only for MCQ (4 options)
+  "answer": "Correct Option Text", // Matches one of the options exactly
+  "language": "javascript" | "python" | "cpp", // Only for Code
+  "functionName": "solution", // Only for Code (The name of the function to be called)
+  "inputFormat": "e.g. n lines of integers", // Only for Code
+  "outputFormat": "e.g. a single integer", // Only for Code
+  "testCases": [ // Only for Code (provide 2-3 examples)
+    { "input": "...", "output": "...", "isHidden": false }
+  ]
+}
+
+IMPORTANT Rules:
+- If type is 'mcq', ensure 'options' has 4 items and 'answer' matches one exactly.
+- If type is 'code', ensure 'testCases' are provided and valid.
+- Be creative with the content but strict with the JSON structure.
+`;
+
+        const result = await model.generateContent(aiPrompt);
+        const raw = result.response.text();
+        const parsed = safeParseJSON(raw);
+
+        // Expecting an array, but safeParseJSON might return object if wrapped.
+        if (parsed) {
+            if (Array.isArray(parsed)) return parsed;
+            if (parsed.questions && Array.isArray(parsed.questions)) return parsed.questions;
+        }
+
+        throw new Error("Invalid AI response structure");
+
+    } catch (err) {
+        console.error("Gemini AI Generate Error:", err.message);
+        throw new Error("Failed to generate quiz from AI: " + err.message);
+    }
+};
+
+exports.classifyQuestion = async ({ questionText, apiKey }) => {
+    try {
+        if (!apiKey) throw new Error("Gemini/Groq API Key is required.");
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+
+        const prompt = `
+You are an expert computer science educator.
+
+Your task is to classify the following quiz question into exactly ONE topic
+from the allowed list below.
+
+Allowed topics:
+- Algorithms
+- Data Structures
+- Correctness
+- Complexity
+- Logic & Reasoning
+- Recursion
+- Mathematical Foundations
+- Programming Basics
+- Edge Cases & Testing
+- Other
+
+Question:
+"${questionText}"
+
+Rules:
+- Return ONLY the topic name
+- Do NOT explain your answer
+- Do NOT invent new topics
+- If unsure, return "Other"
+`;
+
+        const result = await model.generateContent(prompt);
+        const topic = result.response.text().trim();
+
+        // Basic validation against allowing list
+        const allowed = [
+            "Algorithms", "Data Structures", "Correctness", "Complexity",
+            "Logic & Reasoning", "Recursion", "Mathematical Foundations",
+            "Programming Basics", "Edge Cases & Testing", "Other"
+        ];
+
+        const normalized = allowed.find(t => t.toLowerCase() === topic.toLowerCase()) || "Other";
+        return normalized;
+
+    } catch (err) {
+        console.error("AI Classification Error:", err.message);
+        return "Other"; // Fallback
     }
 };

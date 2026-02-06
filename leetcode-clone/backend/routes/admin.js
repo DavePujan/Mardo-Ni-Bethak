@@ -194,4 +194,56 @@ router.delete("/user", auth, adminOnly, async (req, res) => {
     }
 });
 
+
+// Settings Routes
+router.get("/settings", auth, adminOnly, async (req, res) => {
+    try {
+        const { data, error } = await supabase.from("settings").select("*");
+        if (error) throw error;
+
+        // Transform array to object
+        const settings = {
+            allowRegistrations: true, // defaults
+            allowTeachers: true,
+            maintenanceMode: false
+        };
+
+        if (data) {
+            data.forEach(item => {
+                if (item.key === 'allowRegistrations') settings.allowRegistrations = item.value;
+                if (item.key === 'allowTeachers') settings.allowTeachers = item.value;
+                if (item.key === 'maintenanceMode') settings.maintenanceMode = item.value;
+            });
+        }
+
+        res.json(settings);
+    } catch (err) {
+        console.error("Get Settings Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post("/settings", auth, adminOnly, async (req, res) => {
+    const { allowRegistrations, allowTeachers, maintenanceMode } = req.body;
+
+    try {
+        const updates = [
+            { key: 'allowRegistrations', value: allowRegistrations },
+            { key: 'allowTeachers', value: allowTeachers },
+            { key: 'maintenanceMode', value: maintenanceMode }
+        ];
+
+        const { error } = await supabase
+            .from("settings")
+            .upsert(updates);
+
+        if (error) throw error;
+
+        res.json({ message: "Settings updated successfully" });
+    } catch (err) {
+        console.error("Update Settings Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

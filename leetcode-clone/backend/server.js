@@ -1,4 +1,8 @@
 require("dotenv").config();
+const dns = require("dns");
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder("ipv4first");
+}
 const express = require("express");
 const cors = require("cors");
 const submitRoutes = require("./routes/submit");
@@ -28,7 +32,8 @@ app.use((req, res, next) => {
 app.use("/api/teacher", auth, teacherOnly, teacherRoutes);
 app.use("/api/student", studentRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api", submitRoutes);
+app.use("/api/analytics", require("./routes/analytics"));
+
 
 const PORT = 5000;
 app.listen(PORT, () => {

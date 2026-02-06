@@ -49,26 +49,85 @@ router.get("/quizzes", auth, async (req, res) => {
         // Allow fetching ALL quizzes (for Leaderboard), otherwise default to hiding submitted
         if (req.query.includeAttempted === "true") {
             // Fetching for history/leaderboard: Show everything
+            return res.json(quizzesWithStatus);
         } else {
-            quizzesWithStatus = quizzesWithStatus.filter(q => {
+            // Filter logic for Student Dashboard
+            const now = new Date(); // Current time
+
+            const upcoming = [];
+            const active = [];
+
+            quizzesWithStatus.forEach(q => {
                 const isTaken = q.status === "submitted" || q.status === "evaluated";
+                if (isTaken) return; // Don't show already taken quizzes
 
-                // Enhanced Logic: Handle string "false" if DB returns JSON strings, though unlikely with Supabase JS
-                // But strict check is active !== false.
-                const isActive = q.is_active !== false;
+                const manualActive = q.is_active !== false;
+                if (!manualActive) return; // Teacher manually stopped it
 
-                if (isTaken) return false; // Don't show in active list if taken
+                const scheduledTime = q.scheduled_at ? new Date(q.scheduled_at) : new Date(q.created_at);
+                const durationMs = (q.duration || 60) * 60 * 1000;
+                const endTime = new Date(scheduledTime.getTime() + durationMs);
 
-                // If not taken, only show if active
-                return isActive;
+                if (scheduledTime > now) {
+                    upcoming.push(q);
+                } else if (now >= scheduledTime && now < endTime) {
+                    active.push(q);
+                }
+                // If now >= endTime, it's expired/history (hidden from here)
             });
+
+            console.log(`[Student] Returning ${active.length} active and ${upcoming.length} upcoming quizzes.`);
+
+            res.json({ active, upcoming });
         }
-
-        console.log(`[Student] Returning ${quizzesWithStatus.length} active quizzes.`);
-
-        res.json(quizzesWithStatus);
     } catch (err) {
         console.error("Fetch Quizzes Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get Student Quiz History
+router.get("/history", auth, async (req, res) => {
+    try {
+        // Fetch correct profile UUID
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("email", req.user.email)
+            .single();
+
+        const userId = profile?.id;
+        console.log(`[History] Fetching history for email: ${req.user.email}, Profile ID: ${userId}`);
+
+        if (!userId) {
+            console.error("[History] Profile not found for user!");
+            return res.json([]);
+        }
+
+        const { data: history, error } = await supabase
+            .from("quiz_attempts")
+            .select(`
+                id,
+                score,
+                completed_at,
+                status,
+                quiz:quizzes (
+                    id,
+                    title,
+                    subject,
+                    total_marks,
+                    scheduled_at,
+                    created_at
+                )
+            `)
+            .eq("user_id", userId)
+            .order("completed_at", { ascending: false });
+
+        if (error) throw error;
+
+        res.json(history);
+    } catch (err) {
+        console.error("Fetch History Error:", err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -274,6 +333,89 @@ router.post("/quiz/:id/attempt", auth, async (req, res) => {
 
     } catch (err) {
         console.error("Submit Quiz Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Run Code (Test against first test case)
+router.post("/quiz/:id/run", auth, async (req, res) => {
+    try {
+        const { id } = req.params; // quiz id
+        const { questionId, code, language } = req.body;
+
+        // 1. Fetch Question & First Test Case
+        const { data: testCases, error } = await supabase
+            .from("testcases")
+            .select("input, expected_output")
+            .eq("question_id", questionId)
+            // .limit(1) // Just get all and pick first, or limit. 
+            // Better to order by id or something stable? 
+            // Let's just pick the first one returned.
+            .order("id", { ascending: true })
+            .limit(1)
+            .single();
+
+        if (error || !testCases) {
+            // Fallback if no test cases?
+            return res.json({
+                status: { description: "No Test Cases Found" },
+                stdout: "",
+                stderr: "No test cases configured for this question."
+            });
+        }
+
+        // 2. Prepare execution
+        const judge0 = require("../utils/judge0");
+
+        // Wrap code (reusing logic from teacher.js if possible, but duplicating for safety now to avoid wide Refactor)
+        // Wrapper logic is crucial for JS/Python/C++ to read inputs.
+        // User's previous teacher.js had a 'wrapCode' helper. I should probably use a shared utility, 
+        // but for now I'll inline a simple version or try to extract it. 
+        // Let's inline the basic wrapper for now to ensure it works.
+        const wrapCode = (code, lang) => {
+            if (lang === "javascript") {
+                return `${code}\n\n// Driver Code\nconst fs = require('fs');\nconst input = fs.readFileSync(0, 'utf-8').trim().split(/\\s+/).map(Number);\nconsole.log(solution(...input));`;
+            } else if (lang === "python") {
+                return `${code}\n\n# Driver Code\nimport sys\ninput_data = sys.stdin.read().strip().split()\nargs = [int(x) for x in input_data]\nprint(solution(*args))`;
+            } else if (lang === "cpp") {
+                return `#include <iostream>\n#include <vector>\n#include <sstream>\nusing namespace std;\n\n${code}\n\nint main() {\n    // Simplified C++ driver for demo "a b"\n    // Assuming solution(int, int)\n    int a, b;\n    if (cin >> a >> b) cout << solution(a, b) << endl;\n    return 0;\n}`;
+            }
+            return code;
+        };
+
+        const finalCode = wrapCode(code, language);
+        // Map language name to ID
+        // JS: 63, Python: 71, C++: 54
+        const langId = language === "python" ? 71 : language === "cpp" ? 54 : 63;
+
+        // 3. Run on Judge0
+        const result = await judge0.run({
+            source_code: finalCode,
+            language_id: langId,
+            stdin: testCases.input, // Pass input! 
+            expected_output: testCases.expected_output
+        });
+
+        // judge0.run doesn't support 'stdin' in the signature I viewed?
+        // Let's double check judge0.js view.
+        // judge0.js run function signature: ({ source_code, language_id, expected_output ... })
+        // It DOES NOT take stdin in destructuring line 13!
+        // I need to update judge0.js to accept stdin or pass it through options.
+        // Wait, line 23 sends { ... } to axios. It doesn't include stdin! 
+        // I need to fix judge0.js first! 
+
+        // Assuming I fix judge0.js locally or here. 
+        // I will first fix judge0.js in next step, but writing this route assuming it works.
+        // Actually, I can pass strict object to `run` if I update it.
+
+        res.json({
+            ...result,
+            input: testCases.input,
+            expected: testCases.expected_output
+        });
+
+    } catch (err) {
+        console.error("Run Code Error:", err);
         res.status(500).json({ error: err.message });
     }
 });

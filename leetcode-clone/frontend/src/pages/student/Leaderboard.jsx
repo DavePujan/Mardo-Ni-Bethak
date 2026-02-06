@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from "react";
 import { AuthContext } from "../../context/AuthContext";
+import api from "../../utils/api";
 
 const Leaderboard = () => {
     const { token } = useContext(AuthContext);
@@ -11,14 +12,10 @@ const Leaderboard = () => {
     useEffect(() => {
         const fetchQuizzes = async () => {
             try {
-                const response = await fetch("http://localhost:5000/api/student/quizzes?includeAttempted=true", {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    setQuizzes(data);
-                    if (data.length > 0) setSelectedQuizId(data[0].id);
-                }
+                const response = await api.get("/api/student/quizzes?includeAttempted=true");
+                const data = response.data;
+                setQuizzes(data);
+                if (data.length > 0) setSelectedQuizId(data[0].id);
             } catch (err) {
                 console.error("Error fetching quizzes for leaderboard:", err);
             }
@@ -32,13 +29,8 @@ const Leaderboard = () => {
         const fetchLeaderboard = async () => {
             if (!selectedQuizId) return;
             try {
-                const response = await fetch(`http://localhost:5000/api/student/leaderboard?quizId=${selectedQuizId}`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    setLeaderboard(data);
-                }
+                const response = await api.get(`/api/student/leaderboard?quizId=${selectedQuizId}`);
+                setLeaderboard(response.data);
             } catch (err) {
                 console.error("Error fetching leaderboard:", err);
             }

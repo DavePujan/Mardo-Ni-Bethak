@@ -41,97 +41,121 @@ export default function RequestAccess() {
     }
 
     return (
-        <div style={{ maxWidth: "400px", margin: "50px auto", padding: "20px", border: "1px solid #ccc", borderRadius: "8px" }}>
-            <h2>Request Access</h2>
-            <p style={{ marginBottom: "20px", color: "#555" }}>
-                You don't have access to the system. Please submit a request to the admin.
-            </p>
-
-            {msg && <div style={{ color: "green", marginBottom: "10px", padding: '10px', background: '#e6ffe6' }}>{msg}</div>}
-            {error && <div style={{ color: "red", marginBottom: "10px", padding: '10px', background: '#ffe6e6' }}>{error}</div>}
-
-            <form onSubmit={submit}>
-                <div style={{ marginBottom: "15px" }}>
-                    <label style={{ display: "block", marginBottom: "5px" }}>Email</label>
-                    <input
-                        value={email}
-                        onChange={e => setEmail(e.target.value)}
-                        disabled={!!searchParams.get("email")} // Disable if pre-filled from OAuth
-                        required
-                        style={{ width: "100%", padding: "8px" }}
-                    />
+        <div className="flex min-h-screen w-full bg-background font-sans overflow-y-auto">
+            {/* Left Side - Hero / Branding (Hidden on mobile, Same as Login for consistency) */}
+            <div className="hidden lg:flex flex-col justify-center items-center w-1/2 relative bg-[#0a0a0a]">
+                <div className="absolute inset-0 bg-linear-to-br from-purple-900/20 to-blue-900/20 z-0"></div>
+                <div className="z-10 text-center px-12">
+                    <h1 className="text-5xl font-extrabold text-transparent bg-clip-text bg-linear-to-r from-purple-400 to-blue-500 mb-6 drop-shadow-2xl">
+                        Join the Community
+                    </h1>
+                    <p className="text-xl text-gray-300 font-light leading-relaxed">
+                        Request access to start your journey. <br />
+                        <span className="text-gray-500 text-sm mt-4 block">Approval required by Administrator.</span>
+                    </p>
                 </div>
+                <div className="absolute top-20 left-20 w-72 h-72 bg-purple-600/10 rounded-full blur-3xl"></div>
+                <div className="absolute bottom-20 right-20 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl"></div>
+            </div>
 
-                <div style={{ marginBottom: "15px" }}>
-                    <label style={{ display: "block", marginBottom: "5px" }}>Full Name</label>
-                    <input
-                        value={name}
-                        onChange={e => setName(e.target.value)}
-                        required
-                        style={{ width: "100%", padding: "8px" }}
-                    />
-                </div>
-
-                <div style={{ marginBottom: "15px" }}>
-                    <label style={{ display: "block", marginBottom: "5px" }}>Password (for manual login)</label>
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        placeholder="Set a password"
-                        required={provider === 'local'} // Required only for local requests
-                        style={{ width: "100%", padding: "8px" }}
-                    />
-                </div>
-
-                <div style={{ marginBottom: "15px" }}>
-                    <label style={{ display: "block", marginBottom: "5px" }}>Department</label>
-                    <select
-                        value={department}
-                        onChange={e => setDepartment(e.target.value)}
-                        style={{ width: "100%", padding: "8px" }}
-                    >
-                        <option value="">Select Department</option>
-                        <option value="Biomedical Engineering">Biomedical Engineering</option>
-                        <option value="Computer Engineering">Computer Engineering</option>
-                        <option value="Electronics & Communication Engineering">Electronics & Communication Engineering</option>
-                        <option value="General Department">General Department</option>
-                        <option value="Information Technology">Information Technology</option>
-                        <option value="Instrumentation & Control Engineering">Instrumentation & Control Engineering</option>
-                        <option value="Metallurgy Engineering">Metallurgy Engineering</option>
-                        <option value="Mechanical Engineering">Mechanical Engineering</option>
-                        <option value="Civil Engineering">Civil Engineering</option>
-                        <option value="Robotics and Automation Engineering">Robotics and Automation Engineering</option>
-                        <option value="Electrical Engineering">Electrical Engineering</option>
-                    </select>
-                </div>
-
-                <div style={{ marginBottom: "15px" }}>
-                    <label style={{ display: "block", marginBottom: "5px" }}>Role</label>
-                    <select
-                        value={role}
-                        onChange={e => setRole(e.target.value)}
-                        style={{ width: "100%", padding: "8px" }}
-                    >
-                        <option value="student">Student</option>
-                        <option value="teacher">Teacher</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                </div>
-
-                {provider !== 'local' && (
-                    <div style={{ marginBottom: "15px", fontSize: "0.9em", color: "#666" }}>
-                        Authenticating via: <b>{provider}</b>
+            {/* Right Side - Request Form */}
+            <div className="flex-1 flex flex-col justify-center items-center p-8 bg-background relative w-full">
+                <div className="glass w-full max-w-lg p-10 rounded-2xl relative z-10 border border-gray-800 my-10">
+                    <div className="mb-6 text-center">
+                        <h2 className="text-3xl font-bold text-white mb-2">Request Access</h2>
+                        <p className="text-gray-400 text-sm">Fill in your details to get started</p>
                     </div>
-                )}
 
-                <button type="submit" style={{ width: "100%", padding: "10px", background: "#007bff", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>
-                    Submit Request
-                </button>
-            </form>
+                    {msg && <div className="bg-emerald-500/10 border border-emerald-500/50 text-emerald-200 p-3 rounded mb-6 text-center text-sm">{msg}</div>}
+                    {error && <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-3 rounded mb-6 text-center text-sm">{error}</div>}
 
-            <div style={{ marginTop: "15px", textAlign: "center" }}>
-                <Link to="/login">Back to Login</Link>
+                    <form onSubmit={submit} className="space-y-4">
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Email</label>
+                            <input
+                                value={email}
+                                onChange={e => setEmail(e.target.value)}
+                                disabled={!!searchParams.get("email")}
+                                required
+                                className="input disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Full Name</label>
+                            <input
+                                value={name}
+                                onChange={e => setName(e.target.value)}
+                                required
+                                className="input"
+                            />
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Password {provider !== 'local' && '(Optional for OAuth)'}</label>
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                placeholder="Set a secure password"
+                                required={provider === 'local'}
+                                className="input"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Department</label>
+                                <select
+                                    value={department}
+                                    onChange={e => setDepartment(e.target.value)}
+                                    className="input py-3" // Increased padding for select
+                                >
+                                    <option value="">Select Dept</option>
+                                    <option value="Biomedical Engineering">Biomedical</option>
+                                    <option value="Computer Engineering">Computer</option>
+                                    <option value="Electronics & Communication Engineering">ECE</option>
+                                    <option value="Information Technology">IT</option>
+                                    <option value="Mechanical Engineering">Mechanical</option>
+                                    <option value="Civil Engineering">Civil</option>
+                                    <option value="Electrical Engineering">Electrical</option>
+                                    <option value="General Department">General</option>
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">Role</label>
+                                <select
+                                    value={role}
+                                    onChange={e => setRole(e.target.value)}
+                                    className="input py-3"
+                                >
+                                    <option value="student">Student</option>
+                                    <option value="teacher">Teacher</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {provider !== 'local' && (
+                            <div className="text-center text-sm text-gray-500 italic">
+                                Authenticating via: <span className="font-bold text-white uppercase">{provider}</span>
+                            </div>
+                        )}
+
+                        <button
+                            type="submit"
+                            className="btn-primary w-full mt-6 shadow-lg shadow-purple-500/20"
+                        >
+                            Submit Request
+                        </button>
+                    </form>
+
+                    <div className="mt-6 text-center">
+                        <Link to="/login" className="text-sm text-gray-400 hover:text-white transition-colors">
+                            Already have an account? <span className="text-primary font-bold">Log in</span>
+                        </Link>
+                    </div>
+                </div>
             </div>
         </div>
     );

@@ -2,6 +2,15 @@
 
 This project is a comprehensive Quiz Portal and LeetCode-style coding platform, featuring a React frontend, Node.js backend, and Supabase integration.
 
+## Key Features
+
+- **Role-Based Access**: Specialized dashboards for Students, Teachers, and Admins.
+- **Maintenance Mode**: Admin-toggleable maintenance mode that redirects all non-admin users to a maintenance page.
+- **Access Requests**: New users can request access (Student/Teacher role) which admins must approve.
+- **Admin Settings**: Admins can toggle registration permissions and maintenance mode dynamically.
+- **Secure Auth**: JWT-based authentication with forced logout redirection and protected routes.
+- **Code Execution**: Integrated Judge0 for executing code submissions in multiple languages.
+
 ## Full Directory Structure
 
 ```text
@@ -41,9 +50,12 @@ leetcode-clone/
 │   │   ├── auth/
 │   │   │   ├── Login.jsx
 │   │   │   ├── OAuthSuccess.jsx
-│   │   │   └── ProtectedRoute.jsx
+│   │   │   ├── ProtectedRoute.jsx
+│   │   │   └── RequestAccess.jsx
 │   │   ├── components/
-│   │   │   └── CodeEditor.jsx
+│   │   │   ├── CodeEditor.jsx
+│   │   │   ├── Navbar.jsx
+│   │   │   └── Sidebar.jsx
 │   │   ├── context/
 │   │   │   └── AuthContext.jsx
 │   │   ├── lib/
@@ -51,13 +63,16 @@ leetcode-clone/
 │   │   ├── pages/
 │   │   │   ├── admin/
 │   │   │   │   ├── AdminDashboard.jsx
+│   │   │   │   ├── AdminRequests.jsx
 │   │   │   │   ├── AdminSettings.jsx
 │   │   │   │   ├── AuditLogs.jsx
 │   │   │   │   └── UserManagement.jsx
 │   │   │   ├── student/
 │   │   │   │   ├── ActiveQuizzes.jsx
 │   │   │   │   ├── AttemptQuiz.jsx
-│   │   │   │   └── Leaderboard.jsx
+│   │   │   │   ├── History.jsx
+│   │   │   │   ├── Leaderboard.jsx
+│   │   │   │   └── UpcomingQuizzes.jsx
 │   │   │   ├── teacher/
 │   │   │   │   ├── CreateQuestion.jsx
 │   │   │   │   ├── CreateQuiz.jsx
@@ -66,10 +81,8 @@ leetcode-clone/
 │   │   │   │   ├── QuestionBank.jsx
 │   │   │   │   ├── QuizBuilder.jsx
 │   │   │   │   └── TeacherDashboard.jsx
-│   │   │   ├── AdminDashboard.jsx
-│   │   │   ├── CreateProblem.jsx
-│   │   │   ├── Problem.jsx
-│   │   │   └── TeacherDashboard.jsx
+│   │   │   ├── Maintenance.jsx
+│   │   │   └── Problem.jsx
 │   │   ├── styles/
 │   │   │   └── common.css
 │   │   ├── utils/
@@ -107,10 +120,11 @@ This guide helps collaborative developers fork, setup, and run the application l
 
 1. **Fork the repository** on GitHub: [https://github.com/DavePujan/Mardo-Ni-Bethak](https://github.com/DavePujan/Mardo-Ni-Bethak)
 2. **Clone your fork** locally:
+
    ```bash
    # Replace <YOUR-USERNAME> with your GitHub username
    git clone https://github.com/<YOUR-USERNAME>/Mardo-Ni-Bethak.git
-   
+
    # Go into the project directory
    cd Mardo-Ni-Bethak
    ```
@@ -125,11 +139,13 @@ This guide helps collaborative developers fork, setup, and run the application l
 The backend is an Express.js application located in `leetcode-clone/backend`.
 
 1. **Navigate to the backend directory:**
+
    ```bash
    cd leetcode-clone/backend
    ```
 
 2. **Install dependencies:**
+
    ```bash
    npm install
    ```
@@ -172,12 +188,14 @@ The backend is an Express.js application located in `leetcode-clone/backend`.
 The frontend is a React + Vite application located in `leetcode-clone/frontend`.
 
 1. **Navigate to the frontend directory:**
+
    ```bash
    cd ../frontend
    # Or from root: cd leetcode-clone/frontend
    ```
 
 2. **Install dependencies:**
+
    ```bash
    npm install
    ```

@@ -1,17 +1,24 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
 import Problem from "./pages/Problem";
 import Login from "./auth/Login";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import OAuthSuccess from "./auth/OAuthSuccess";
 import { AuthProvider, AuthContext } from "./context/AuthContext";
-import { useContext } from "react";
+import { useContext, useState, useEffect } from "react";
+import { Toaster } from "react-hot-toast";
 import "./styles/common.css";
+import { Menu, X } from "lucide-react";
 
 import RequestAccess from "./auth/RequestAccess";
+import ForgotPassword from "./auth/ForgotPassword";
+import Maintenance from "./pages/Maintenance";
+import DashboardLayout from "./layouts/DashboardLayout";
 
 // Student Page
 import Leaderboard from "./pages/student/Leaderboard";
 import ActiveQuizzes from "./pages/student/ActiveQuizzes";
+import UpcomingQuizzes from "./pages/student/UpcomingQuizzes";
+import History from "./pages/student/History";
 import AttemptQuiz from "./pages/student/AttemptQuiz";
 
 // Teacher Pages
@@ -20,6 +27,7 @@ import CreateQuiz from "./pages/teacher/CreateQuiz";
 import Evaluations from "./pages/teacher/Evaluations";
 import QuizBuilder from "./pages/teacher/QuizBuilder";
 import EvaluationViewer from "./pages/teacher/EvaluationViewer";
+import QuizAnalytics from "./pages/teacher/QuizAnalytics";
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/AdminDashboard";
@@ -28,44 +36,76 @@ import AuditLogs from "./pages/admin/AuditLogs";
 import AdminSettings from "./pages/admin/AdminSettings";
 import AdminRequests from "./pages/admin/AdminRequests";
 
-
+// NavBar is now only for Student and Public pages. 
+// Teacher/Admin navigation is handled by Sidebar in DashboardLayout.
 function NavBar() {
   const { token, logout, role } = useContext(AuthContext);
+  const location = useLocation();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // Don't show Navbar for Teacher/Admin as they have Sidebar
+  // Also don't show for Quiz Attempt page
+  if (role === "teacher" || role === "admin" || location.pathname.includes("/student/quiz/") || location.pathname === "/request-access" || location.pathname === "/login") return null;
+
   return (
-    <nav style={{ padding: "10px", borderBottom: "1px solid #ccc", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <div>
-        <Link to="/" style={{ marginRight: "15px", fontWeight: "bold" }}>QuizPortal</Link>
+    <nav className="flex flex-col px-6 py-4 bg-background-layer1 border-b border-gray-800 sticky top-0 z-50 shadow-md">
+      <div className="flex items-center justify-between w-full">
+        <Link to={token ? (role === 'teacher' ? "/teacher" : role === 'admin' ? "/admin" : "/student/dashboard") : "/"} className="text-2xl font-bold bg-clip-text text-transparent bg-linear-to-r from-blue-400 to-purple-500 mr-8 tracking-tight">
+          QuizPortal
+        </Link>
 
-        {role === "student" && (
-          <>
-            <Link to="/" style={{ marginRight: "10px" }}>Active Quizzes</Link>
-            <Link to="/leaderboard" style={{ marginRight: "10px" }}>Leaderboard</Link>
-          </>
-        )}
+        {/* Desktop Menu */}
+        <div className="hidden md:flex items-center space-x-6">
+          {role === "student" && (
+            <>
+              <Link to="/student/dashboard" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Active Quizzes</Link>
+              <Link to="/leaderboard" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Leaderboard</Link>
+              <Link to="/upcoming" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Upcoming Quizzes</Link>
+              <Link to="/history" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">History</Link>
+            </>
+          )}
+        </div>
 
-        {role === "teacher" && (
-          <>
-            <Link to="/teacher" style={{ marginRight: "10px" }}>Dashboard</Link>
-            <Link to="/teacher/create-quiz" style={{ marginRight: "10px" }}>New Quiz</Link>
-            <Link to="/teacher/evaluations" style={{ marginRight: "10px" }}>Evals</Link>
-          </>
-        )}
+        <div className="flex items-center gap-4">
+          {/* Desktop Logout */}
+          <div className="hidden md:block">
+            {token ? (
+              <button onClick={logout} className="px-4 py-2 text-sm font-medium text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 transition-colors">
+                Logout ({role})
+              </button>
+            ) : (
+              <Link to="/login" className="px-5 py-2 text-sm font-bold text-white bg-primary rounded-lg shadow-lg hover:bg-primary-hover transition-colors">
+                Login
+              </Link>
+            )}
+          </div>
 
-        {role === "admin" && (
-          <>
-            <Link to="/admin" style={{ marginRight: "10px" }}>Dashboard</Link>
-            <Link to="/admin/requests" style={{ marginRight: "10px" }}>Requests</Link>
-            <Link to="/admin/users" style={{ marginRight: "10px" }}>Users</Link>
-          </>
-        )}
+          {/* Mobile Menu Toggle */}
+          {role === "student" && (
+            <button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="md:hidden text-gray-400 hover:text-white focus:outline-none"
+            >
+              {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          )}
+        </div>
       </div>
-      <div>
-        {token ? (
-          <button onClick={logout} className="btn-secondary" style={{ padding: "5px 10px" }}>Logout ({role})</button>
-        ) : (
-          <Link to="/login">Login</Link>
-        )}
-      </div>
+
+      {/* Mobile Dropdown Menu */}
+      {isMenuOpen && role === "student" && (
+        <div className="md:hidden mt-4 pb-2 border-t border-gray-800 pt-4 flex flex-col space-y-3 animation-fade-in">
+          <Link to="/student/dashboard" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">Active Quizzes</Link>
+          <Link to="/leaderboard" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">Leaderboard</Link>
+          <Link to="/upcoming" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">Upcoming Quizzes</Link>
+          <Link to="/history" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">History</Link>
+          {token && (
+            <button onClick={logout} className="text-left text-base font-medium text-red-400 hover:text-red-300 transition-colors pl-2 pt-2 border-t border-gray-800 mt-2">
+              Logout
+            </button>
+          )}
+        </div>
+      )}
     </nav>
   );
 }
@@ -73,19 +113,42 @@ function NavBar() {
 export default function App() {
   return (
     <AuthProvider>
+      <Toaster position="top-right" />
       <BrowserRouter>
         <NavBar />
         <Routes>
+          <Route path="/maintenance" element={<Maintenance />} />
           <Route path="/login" element={<Login />} />
           <Route path="/request-access" element={<RequestAccess />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/oauth-success" element={<OAuthSuccess />} />
 
           {/* Student / Public */}
+          {/* Student / Public */}
+          <Route path="/" element={<Login />} />
+          
           <Route
-            path="/"
+            path="/student/dashboard"
             element={
               <ProtectedRoute>
                 <ActiveQuizzes />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/upcoming"
+            element={
+              <ProtectedRoute>
+                <UpcomingQuizzes />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/history"
+            element={
+              <ProtectedRoute>
+                <History />
               </ProtectedRoute>
             }
           />
@@ -109,18 +172,19 @@ export default function App() {
           />
 
           {/* Teacher Routes */}
-          <Route path="/teacher" element={<ProtectedRoute role="teacher"><TeacherDashboard /></ProtectedRoute>} />
-          <Route path="/teacher/create-quiz" element={<ProtectedRoute role="teacher"><CreateQuiz /></ProtectedRoute>} />
-          <Route path="/teacher/quiz-builder" element={<ProtectedRoute role="teacher"><QuizBuilder /></ProtectedRoute>} />
-          <Route path="/teacher/evaluations" element={<ProtectedRoute role="teacher"><Evaluations /></ProtectedRoute>} />
-          <Route path="/teacher/evaluation/:id" element={<ProtectedRoute role="teacher"><EvaluationViewer /></ProtectedRoute>} />
+          <Route path="/teacher" element={<ProtectedRoute role="teacher"><DashboardLayout><TeacherDashboard /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/teacher/create-quiz" element={<ProtectedRoute role="teacher"><DashboardLayout><CreateQuiz /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/teacher/quiz-builder" element={<ProtectedRoute role="teacher"><DashboardLayout><QuizBuilder /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/teacher/evaluations" element={<ProtectedRoute role="teacher"><DashboardLayout><Evaluations /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/teacher/evaluation/:id" element={<ProtectedRoute role="teacher"><DashboardLayout><EvaluationViewer /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/teacher/quiz/:id/analytics" element={<ProtectedRoute role="teacher"><DashboardLayout><QuizAnalytics /></DashboardLayout></ProtectedRoute>} />
 
           {/* Admin Routes */}
-          <Route path="/admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />
-          <Route path="/admin/requests" element={<ProtectedRoute role="admin"><AdminRequests /></ProtectedRoute>} />
-          <Route path="/admin/users" element={<ProtectedRoute role="admin"><UserManagement /></ProtectedRoute>} />
-          <Route path="/admin/logs" element={<ProtectedRoute role="admin"><AuditLogs /></ProtectedRoute>} />
-          <Route path="/admin/settings" element={<ProtectedRoute role="admin"><AdminSettings /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute role="admin"><DashboardLayout><AdminDashboard /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/admin/requests" element={<ProtectedRoute role="admin"><DashboardLayout><AdminRequests /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/admin/users" element={<ProtectedRoute role="admin"><DashboardLayout><UserManagement /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/admin/logs" element={<ProtectedRoute role="admin"><DashboardLayout><AuditLogs /></DashboardLayout></ProtectedRoute>} />
+          <Route path="/admin/settings" element={<ProtectedRoute role="admin"><DashboardLayout><AdminSettings /></DashboardLayout></ProtectedRoute>} />
 
         </Routes>
       </BrowserRouter>

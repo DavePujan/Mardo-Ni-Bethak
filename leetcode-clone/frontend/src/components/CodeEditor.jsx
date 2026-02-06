@@ -1,30 +1,31 @@
 import Editor from "@monaco-editor/react";
 import React, { useRef } from "react";
 
-function CodeEditor({ language, code, setCode, template, width = "650px", height = "400px" }) {
+function CodeEditor({ language, code, setCode, template, width = "650px", height = "400px", lockFirstLine = false }) {
     const editorRef = useRef(null);
 
     function onMount(editor, monaco) {
         editorRef.current = editor;
 
-        // Hard Lock: Cursor Logic
-        editor.onDidChangeCursorPosition(e => {
-            if (e.position.lineNumber === 1) {
-                editor.setPosition({ lineNumber: 2, column: 1 });
-            }
-        });
-
-        // Content Guard: Prevent modifying line 1 (Signature)
-        // Check property to prevent duplicate listeners on re-mounts if strict mode is on
-        if (!editor.__listenersAttached) {
-            editor.onDidChangeModelContent(e => {
-                e.changes.forEach(change => {
-                    if (change.range.startLineNumber === 1) {
-                        editor.getModel().setValue(template);
-                    }
-                });
+        if (lockFirstLine) {
+            // Hard Lock: Cursor Logic
+            editor.onDidChangeCursorPosition(e => {
+                if (e.position.lineNumber === 1) {
+                    editor.setPosition({ lineNumber: 2, column: 1 });
+                }
             });
-            editor.__listenersAttached = true;
+
+            // Content Guard: Prevent modifying line 1 (Signature)
+            if (!editor.__listenersAttached) {
+                editor.onDidChangeModelContent(e => {
+                    e.changes.forEach(change => {
+                        if (change.range.startLineNumber === 1) {
+                            editor.getModel().setValue(template);
+                        }
+                    });
+                });
+                editor.__listenersAttached = true;
+            }
         }
     }
 

@@ -9,6 +9,8 @@ CREATE TABLE public.access_requests (
   provider text NOT NULL,
   status text DEFAULT 'pending'::text,
   created_at timestamp without time zone DEFAULT now(),
+  name text,
+  password text,
   CONSTRAINT access_requests_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.audit_logs (
@@ -44,6 +46,8 @@ CREATE TABLE public.profiles (
   is_verified boolean DEFAULT false,
   created_at timestamp without time zone DEFAULT now(),
   department text,
+  full_name text,
+  password text,
   CONSTRAINT profiles_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.question_bank (
@@ -81,6 +85,11 @@ CREATE TABLE public.quiz_answers (
   is_correct boolean DEFAULT false,
   marks_awarded numeric DEFAULT 0,
   created_at timestamp with time zone DEFAULT now(),
+  marks_obtained double precision DEFAULT 0,
+  feedback text,
+  ai_analysis jsonb,
+  test_cases_passed integer,
+  total_test_cases integer,
   CONSTRAINT quiz_answers_pkey PRIMARY KEY (id),
   CONSTRAINT quiz_answers_attempt_id_fkey FOREIGN KEY (attempt_id) REFERENCES public.quiz_attempts(id),
   CONSTRAINT quiz_answers_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id)
@@ -129,6 +138,9 @@ CREATE TABLE public.quizzes (
   created_at timestamp without time zone DEFAULT now(),
   quiz_type text DEFAULT 'code'::text CHECK (quiz_type = ANY (ARRAY['mcq'::text, 'code'::text, 'hybrid'::text])),
   is_active boolean DEFAULT true,
+  scheduled_at timestamp with time zone DEFAULT now(),
+  department text,
+  semester text,
   CONSTRAINT quizzes_pkey PRIMARY KEY (id),
   CONSTRAINT quizzes_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id)
 );

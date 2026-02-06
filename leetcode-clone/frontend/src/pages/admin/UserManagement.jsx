@@ -71,18 +71,18 @@ export default function UserManagement() {
 
     return (
         <div className="p-6">
-            <h1 className="text-xl font-semibold mb-4">User Management</h1>
+            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-linear-to-r from-blue-400 to-purple-500 mb-8">User Management</h1>
 
-            <div className="flex gap-4 mb-6 bg-white p-4 rounded shadow-sm">
+            <div className="flex flex-col md:flex-row gap-4 mb-6 card p-6">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Role</label>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Filter by Role</label>
                     <select
                         value={roleFilter}
                         onChange={(e) => {
                             setRoleFilter(e.target.value);
                             if (e.target.value === 'admin') setDeptFilter('all');
                         }}
-                        className="p-2 border rounded shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="input min-w-[200px]"
                     >
                         <option value="all">All Roles</option>
                         <option value="admin">Admin</option>
@@ -93,11 +93,11 @@ export default function UserManagement() {
 
                 {roleFilter !== 'admin' && (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Department</label>
+                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Filter by Department</label>
                         <select
                             value={deptFilter}
                             onChange={(e) => setDeptFilter(e.target.value)}
-                            className="p-2 border rounded shadow-sm focus:ring-blue-500 focus:border-blue-500 min-w-[250px]"
+                            className="input min-w-[250px]"
                         >
                             <option value="all">All Departments</option>
                             {departments.map(d => (
@@ -108,57 +108,60 @@ export default function UserManagement() {
                 )}
             </div>
 
-            <table className="w-full bg-white shadow rounded text-left border-collapse">
-                <thead className="bg-gray-100">
-                    <tr>
-                        <th className="p-4 border-b">Name</th>
-                        <th className="p-4 border-b">Email</th>
-                        <th className="p-4 border-b">Role</th>
-                        <th className="p-4 border-b">Department</th>
-                        <th className="p-4 border-b">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {filteredUsers.length === 0 ? (
-                        <tr><td colSpan="5" className="p-4 text-center text-gray-500">No users found matching filters.</td></tr>
-                    ) : (
-                        filteredUsers.map(u => (
-                            <tr key={u.email} className="border-b hover:bg-gray-50">
-                                <td className="p-4 font-medium">{u.full_name || "-"}</td>
-                                <td className="p-4 text-gray-600">{u.email}</td>
-                                <td className="p-4">
-                                    <span className={`px-2 py-1 rounded text-xs uppercase font-bold ${u.role === 'admin' ? 'bg-red-100 text-red-800' :
-                                        u.role === 'teacher' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                                        }`}>
-                                        {u.role}
-                                    </span>
-                                </td>
-                                <td className="p-4 text-gray-500">{u.department || "-"}</td>
-                                <td className="p-4 flex gap-2">
-                                    {u.role !== "teacher" && u.role !== "admin" && (
-                                        <button onClick={() => promote(u.email, "teacher")} className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm">
-                                            Make Teacher
-                                        </button>
-                                    )}
-                                    {u.role !== "admin" && (
-                                        <button onClick={() => promote(u.email, "admin")} className="bg-gray-600 text-white px-3 py-1 rounded hover:bg-gray-700 text-sm">
-                                            Make Admin
-                                        </button>
-                                    )}
+            <div className="card p-0 overflow-hidden">
+                <table className="w-full text-left border-collapse">
+                    <thead className="bg-white/5 border-b border-gray-800 text-gray-400 text-sm uppercase tracking-wider">
+                        <tr>
+                            <th className="p-4 font-medium">Name</th>
+                            <th className="p-4 font-medium">Email</th>
+                            <th className="p-4 font-medium">Role</th>
+                            <th className="p-4 font-medium">Department</th>
+                            <th className="p-4 font-medium text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800 font-light text-gray-300">
+                        {filteredUsers.length === 0 ? (
+                            <tr><td colSpan="5" className="p-6 text-center text-gray-500">No users found matching filters.</td></tr>
+                        ) : (
+                            filteredUsers.map(u => (
+                                <tr key={u.email} className="hover:bg-white/5 transition-colors">
+                                    <td className="p-4 font-medium text-white">{u.full_name || "-"}</td>
+                                    <td className="p-4 text-gray-400">{u.email}</td>
+                                    <td className="p-4">
+                                        <span className={`px-2 py-1 rounded text-xs uppercase font-bold tracking-wider ${u.role === 'admin' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
+                                                u.role === 'teacher' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                                                    'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                            }`}>
+                                            {u.role}
+                                        </span>
+                                    </td>
+                                    <td className="p-4 text-gray-500 text-sm">{u.department || "-"}</td>
+                                    <td className="p-4 text-right flex justify-end gap-2">
+                                        {u.role !== "teacher" && u.role !== "admin" && (
+                                            <button onClick={() => promote(u.email, "teacher")} className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded hover:bg-blue-500/20 transition-colors text-sm">
+                                                Make Teacher
+                                            </button>
+                                        )}
+                                        {u.role !== "admin" && (
+                                            <button onClick={() => promote(u.email, "admin")} className="px-3 py-1 bg-gray-500/10 text-gray-400 border border-gray-500/20 rounded hover:bg-gray-500/20 transition-colors text-sm">
+                                                Make Admin
+                                            </button>
+                                        )}
 
-                                    <button onClick={() => handleDemote(u)} className="bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600 text-sm">
-                                        Demote
-                                    </button>
+                                        <button onClick={() => handleDemote(u)} className="px-3 py-1 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded hover:bg-orange-500/20 transition-colors text-sm">
+                                            Demote
+                                        </button>
 
-                                    <button onClick={() => removeUser(u.email)} className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 text-sm">
-                                        Remove Access
-                                    </button>
-                                </td>
-                            </tr>
-                        ))
-                    )}
-                </tbody>
-            </table>
+                                        <button onClick={() => removeUser(u.email)} className="px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded hover:bg-red-500/20 transition-colors text-sm">
+                                            Remove
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
