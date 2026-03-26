@@ -158,3 +158,35 @@ CREATE TABLE public.testcases (
   CONSTRAINT testcases_pkey PRIMARY KEY (id),
   CONSTRAINT testcases_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id)
 );
+
+-- ==========================================
+-- PERFORMANCE INDEXES & FUTURE MIGRATIONS
+-- ==========================================
+
+-- Standard updated_at Columns (can be retroactively added using triggers)
+-- ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+-- ALTER TABLE quiz_answers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Massive performance indexes for foreign key Lookups (Prevents table-scans during analytics queries)
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_user_id ON quiz_attempts(user_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_quiz_id ON quiz_attempts(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_answers_attempt_id ON quiz_answers(attempt_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_answers_question_id ON quiz_answers(question_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_questions_map_quiz_id ON quiz_questions_map(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_questions_map_question_id ON quiz_questions_map(question_id);
+
+-- Submissions Table Schema designed for future Code Execution separation
+CREATE TABLE IF NOT EXISTS public.submissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    question_id UUID REFERENCES public.questions(id) ON DELETE CASCADE,
+    quiz_id UUID REFERENCES public.quizzes(id) ON DELETE SET NULL,
+    source_code TEXT NOT NULL,
+    language_id INTEGER NOT NULL,
+    status_id INTEGER, 
+    memory INTEGER,    
+    time FLOAT,    
+    is_correct BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);

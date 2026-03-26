@@ -18,4 +18,29 @@ const pool = new Pool({
     }
 });
 
+// Retry Logic and Connection Logging
+const connectWithRetry = async (retries = 5, delay = 5000) => {
+    while (retries > 0) {
+        try {
+            const client = await pool.connect();
+            console.log("DB Connected");
+            client.release();
+            return;
+        } catch (err) {
+            console.error("DB Failed", err.message);
+            retries -= 1;
+            console.log(`Retries left: ${retries}. Retrying in ${delay / 1000}s...`);
+            if (retries === 0) {
+                console.error("Could not connect to the database.");
+            } else {
+                await new Promise(res => setTimeout(res, delay));
+            }
+        }
+    }
+};
+
+if (process.env.NODE_ENV !== 'test') {
+    connectWithRetry();
+}
+
 module.exports = pool;

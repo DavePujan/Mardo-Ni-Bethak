@@ -2,14 +2,14 @@ const router = require("express").Router();
 const { createClient } = require("@supabase/supabase-js");
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-const { auth, adminOnly } = require("../middleware/auth");
+const { auth, authorize } = require("../middleware/auth");
 const User = require("../models/User");
 const AccessRequest = require("../models/AccessRequest");
 const crypto = require("crypto");
 
 
 
-router.get("/requests", auth, adminOnly, async (req, res) => {
+router.get("/requests", auth, authorize('admin'), async (req, res) => {
     try {
         console.log("Fetching pending access requests...");
         const { data, error } = await supabase
@@ -31,7 +31,7 @@ router.get("/requests", auth, adminOnly, async (req, res) => {
     }
 });
 
-router.post("/approve-request", auth, adminOnly, async (req, res) => {
+router.post("/approve-request", auth, authorize('admin'), async (req, res) => {
     const { email } = req.body;
 
     try {
@@ -86,7 +86,7 @@ router.post("/approve-request", auth, adminOnly, async (req, res) => {
     }
 });
 
-router.get("/dashboard", auth, adminOnly, async (req, res) => {
+router.get("/dashboard", auth, authorize('admin'), async (req, res) => {
     try {
         const { count: totalUsers } = await supabase.from("profiles").select("*", { count: "exact", head: true });
 
@@ -116,7 +116,7 @@ router.get("/dashboard", auth, adminOnly, async (req, res) => {
     }
 });
 
-router.get("/users", auth, adminOnly, async (req, res) => {
+router.get("/users", auth, authorize('admin'), async (req, res) => {
     try {
         const { data, error } = await supabase.from("profiles").select("*");
         if (error) throw error;
@@ -126,7 +126,7 @@ router.get("/users", auth, adminOnly, async (req, res) => {
     }
 });
 
-router.patch("/user/role", auth, adminOnly, async (req, res) => {
+router.patch("/user/role", auth, authorize('admin'), async (req, res) => {
     const { userId, role } = req.body;
     const user = await User.findOne({ id: parseInt(userId) });
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -135,7 +135,7 @@ router.patch("/user/role", auth, adminOnly, async (req, res) => {
     res.json({ message: "Role updated", user });
 });
 
-router.patch("/promote", auth, adminOnly, async (req, res) => {
+router.patch("/promote", auth, authorize('admin'), async (req, res) => {
     const { email, role } = req.body;
     if (!["teacher", "admin", "student"].includes(role)) {
         return res.status(400).json({ error: "Invalid role" });
@@ -154,7 +154,7 @@ router.patch("/promote", auth, adminOnly, async (req, res) => {
     res.json({ message: "Role updated" });
 });
 
-router.post("/reject-request", auth, adminOnly, async (req, res) => {
+router.post("/reject-request", auth, authorize('admin'), async (req, res) => {
     const { email } = req.body;
 
     try {
@@ -172,7 +172,7 @@ router.post("/reject-request", auth, adminOnly, async (req, res) => {
     }
 });
 
-router.delete("/user", auth, adminOnly, async (req, res) => {
+router.delete("/user", auth, authorize('admin'), async (req, res) => {
     const { email } = req.body;
 
     try {
@@ -196,7 +196,7 @@ router.delete("/user", auth, adminOnly, async (req, res) => {
 
 
 // Settings Routes
-router.get("/settings", auth, adminOnly, async (req, res) => {
+router.get("/settings", auth, authorize('admin'), async (req, res) => {
     try {
         const { data, error } = await supabase.from("settings").select("*");
         if (error) throw error;
@@ -223,7 +223,7 @@ router.get("/settings", auth, adminOnly, async (req, res) => {
     }
 });
 
-router.post("/settings", auth, adminOnly, async (req, res) => {
+router.post("/settings", auth, authorize('admin'), async (req, res) => {
     const { allowRegistrations, allowTeachers, maintenanceMode } = req.body;
 
     try {

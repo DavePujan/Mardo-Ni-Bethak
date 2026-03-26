@@ -6,12 +6,8 @@ const api = axios.create({
     withCredentials: true // For sending cookies
 });
 
-// Request interceptor to add token
+// Request interceptor (legacy token attachment removed for strictly cookie-based auth)
 api.interceptors.request.use((config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
     return config;
 });
 
@@ -28,17 +24,15 @@ api.interceptors.response.use(
         if (error.response.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true;
             try {
-                const res = await axios.post("http://localhost:5000/auth/refresh", {}, { withCredentials: true });
-                const { accessToken } = res.data;
-                localStorage.setItem("token", accessToken);
-                // Force update context if possible (complex without redux/signals, user page reload might be needed to reflect in context, but for API call it works)
-                // Ideally we update AuthContext too. For now let's just make the API call work.
+                // The backend will automatically set the new accessToken HTTP-Only cookie in the response
+                await axios.post("http://localhost:5000/auth/refresh", {}, { withCredentials: true });
 
-                api.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+                // Retry original request, cookies are automatically sent withCredentials
                 return api(originalRequest);
             } catch (err) {
-                // Refresh failed, logout?
+                // Refresh failed, session completely expired, redirect to login
                 console.error("Refresh failed", err);
+                window.location.href = "/login";
                 return Promise.reject(err);
             }
         }

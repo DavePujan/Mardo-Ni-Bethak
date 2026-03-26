@@ -420,4 +420,80 @@ router.post("/quiz/:id/run", auth, async (req, res) => {
     }
 });
 
+// Get Detailed Quiz History (Review Mode)
+router.get("/history/:attemptId", auth, async (req, res) => {
+    try {
+        const { attemptId } = req.params;
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("email", req.user.email)
+            .single();
+
+        const userId = profile?.id;
+
+        // 1. Verify Attempt ownership
+        const { data: attempt, error: attemptError } = await supabase
+            .from("quiz_attempts")
+            .select("id, quiz_id, score, total_marks, status, created_at, completed_at")
+            .eq("id", attemptId)
+            .eq("user_id", userId)
+            .single();
+
+        if (attemptError || !attempt) {
+            return res.status(404).json({ error: "Attempt not found" });
+        }
+
+        // 2. Fetch Questions & Answers
+        // We need question details + user's answer + correct answer (for review)
+        const { data: answers } = await supabase
+            .from("quiz_answers")
+            .select(`
+                question_id,
+                selected_option,
+                submitted_code,
+                is_correct,
+                marks_awarded,
+                question:questions (
+                    id, title, type, difficulty, explanation, weightage,
+                    mcq_options (option_text, is_correct)
+                )
+            `)
+            .eq("attempt_id", attemptId);
+
+        // 3. Transform Data
+        const questions = answers.map((ans, idx) => {
+            const q = ans.question;
+            const options = q.mcq_options.map(o => o.option_text);
+            const correctOptionIndex = q.mcq_options.findIndex(o => o.is_correct);
+            const userOptionIndex = q.mcq_options.findIndex(o => o.option_text === ans.selected_option);
+
+            return {
+                id: q.id,
+                title: q.title,
+                type: q.type,
+                difficulty: q.difficulty || "medium",
+                marks: q.weightage,
+                marksObtained: ans.marks_awarded,
+                // Mock time spent per question if not tracked
+                timeSpent: "45s",
+                isCorrect: ans.is_correct,
+                userAnswer: userOptionIndex, // Index for Frontend
+                correctAnswer: correctOptionIndex, // Index for Frontend
+                options: options,
+                explanation: q.explanation
+            };
+        });
+
+        res.json({
+            ...attempt,
+            questions
+        });
+
+    } catch (err) {
+        console.error("Detailed History Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

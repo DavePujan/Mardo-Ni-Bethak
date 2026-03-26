@@ -9,7 +9,7 @@ export default function EvaluationViewer() {
     // Mock getSubmissions
     async function getSubmissions() {
         return fetch(`http://localhost:5000/api/teacher/evaluation/${id}`, {
-            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+            credentials: "include"
         }).then(r => r.json()).then(d => ({ data: d }));
     }
 
@@ -30,9 +30,9 @@ export default function EvaluationViewer() {
             const res = await fetch(`http://localhost:5000/api/teacher/evaluate/${id}`, {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${localStorage.getItem("token")}`
-                }
+                    "Content-Type": "application/json"
+                },
+                credentials: "include"
             });
             const data = await res.json();
             if (res.ok) {
@@ -143,9 +143,9 @@ export default function EvaluationViewer() {
                                 const res = await fetch(`http://localhost:5000/api/teacher/evaluation/${id}/finalize`, {
                                     method: "POST",
                                     headers: {
-                                        "Content-Type": "application/json",
-                                        "Authorization": `Bearer ${localStorage.getItem("token")}`
+                                        "Content-Type": "application/json"
                                     },
+                                    credentials: "include",
                                     body: JSON.stringify({ marks: updates })
                                 });
                                 if (res.ok) {

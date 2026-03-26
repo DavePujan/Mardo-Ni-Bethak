@@ -8,11 +8,10 @@ export default function OAuthSuccess() {
     const navigate = useNavigate();
 
     useEffect(() => {
-        const token = searchParams.get("token");
         const role = searchParams.get("role");
 
-        if (token && role) {
-            login(token, role);
+        if (role) {
+            login(role);
 
             // Redirect based on role
             if (role === 'teacher') setTimeout(() => navigate("/teacher"), 500);

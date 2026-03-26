@@ -3,13 +3,19 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const User = require("../models/User"); // Wrapper
 const router = express.Router();
+const redisClient = require("../config/redis");
+const crypto = require("crypto");
 
 const passport = require("passport");
 const REFRESH_SECRET = process.env.REFRESH_SECRET || "refreshsecret123";
 
 const AccessRequest = require("../models/AccessRequest");
+const { loginLimiter } = require("../middleware/rateLimiter");
 
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
+    if (!redisClient.isAvailable) {
+        res.set("X-Fallback-Mode", "memory");
+    }
     const { email, password } = req.body;
     let user = await User.findOne({ email });
 
@@ -49,8 +55,11 @@ router.post("/login", async (req, res) => {
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: "15m" });
     const refreshToken = jwt.sign({ id: user.id, email: user.email, role: user.role }, REFRESH_SECRET, { expiresIn: "7d" });
 
-    res.cookie("refreshToken", refreshToken, { httpOnly: true, secure: false, sameSite: "strict" });
-    res.json({ token, role: user.role });
+    const cookieOptions = { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: process.env.NODE_ENV === "production" ? "none" : "lax" };
+    res.cookie("accessToken", token, cookieOptions);
+    res.cookie("refreshToken", refreshToken, cookieOptions);
+
+    res.json({ role: user.role });
 });
 
 const { createClient } = require("@supabase/supabase-js");
@@ -121,14 +130,23 @@ router.post("/request-access", async (req, res) => {
     }
 });
 
-router.post("/refresh", (req, res) => {
+router.post("/refresh", async (req, res) => {
     const token = req.cookies.refreshToken;
     if (!token) return res.status(401).json({ error: "No refresh token" });
 
     try {
+        let isBlacklisted = false;
+        if (redisClient.isAvailable) {
+            const hash = crypto.createHash("sha256").update(token).digest("hex");
+            // Intercept Blacklisted Refresh Tokens
+            isBlacklisted = await redisClient.get(`bl_${hash}`);
+        }
+        if (isBlacklisted) return res.status(401).json({ error: "Refresh token blacklisted" });
+
         const u = jwt.verify(token, REFRESH_SECRET);
         const newAccess = jwt.sign({ id: u.id, email: u.email, role: u.role }, process.env.JWT_SECRET, { expiresIn: "15m" });
-        res.json({ accessToken: newAccess });
+        res.cookie("accessToken", newAccess, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: process.env.NODE_ENV === "production" ? "none" : "lax" });
+        res.json({ message: "Refreshed successfully" });
     } catch (err) {
         res.status(403).json({ error: "Invalid refresh token" });
     }
@@ -200,6 +218,28 @@ router.get("/verify", async (req, res) => {
     // user.save(); // In-memory reference update
 
     res.send("Email verified successfully! You can close this tab.");
+});
+
+router.post("/logout", async (req, res) => {
+    const accessToken = req.cookies.accessToken || req.headers.authorization?.split(" ")[1];
+    const refreshToken = req.cookies.refreshToken;
+
+    if (redisClient.isAvailable) {
+        if (accessToken) {
+            const accHash = crypto.createHash("sha256").update(accessToken).digest("hex");
+            await redisClient.set(`bl_${accHash}`, "true", "EX", 60 * 60); // Buffer of 1 hour for access tokens
+        }
+        if (refreshToken) {
+            const refHash = crypto.createHash("sha256").update(refreshToken).digest("hex");
+            await redisClient.set(`bl_${refHash}`, "true", "EX", 7 * 24 * 60 * 60); // Exact 7-day matching span
+        }
+    }
+
+    const cookieOptions = { httpOnly: true, expires: new Date(0), secure: process.env.NODE_ENV === "production", sameSite: process.env.NODE_ENV === "production" ? "none" : "lax" };
+    res.cookie("accessToken", "", cookieOptions);
+    res.cookie("refreshToken", "", cookieOptions);
+
+    res.json({ message: "Logged out successfully" });
 });
 
 module.exports = router;

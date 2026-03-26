@@ -19,7 +19,7 @@ const GithubIcon = () => (
 );
 
 export default function Login() {
-    const { login, token, role } = useContext(AuthContext);
+    const { login, role } = useContext(AuthContext);
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
@@ -28,19 +28,18 @@ export default function Login() {
 
     // Redirect if already logged in
     useEffect(() => {
-        if (token && role) {
+        if (role) {
             if (role === 'teacher') navigate("/teacher");
             else if (role === 'admin') navigate("/admin");
             else navigate("/student/dashboard");
         }
-    }, [token, role, navigate]);
+    }, [role, navigate]);
 
     useEffect(() => {
-        const t = searchParams.get("token");
         const r = searchParams.get("role");
-        if (t && r) {
-            login(t, r);
-            // Navigation handled by above useEffect when token/role updates
+        if (r) {
+            login(r);
+            // Navigation handled by above useEffect when role updates
         }
     }, [searchParams, login]);
 
@@ -51,7 +50,7 @@ export default function Login() {
                 password
             }, { withCredentials: true });
 
-            login(res.data.token, res.data.role);
+            login(res.data.role);
 
             if (res.data.role === 'teacher') navigate("/teacher");
             else if (res.data.role === 'admin') navigate("/admin");

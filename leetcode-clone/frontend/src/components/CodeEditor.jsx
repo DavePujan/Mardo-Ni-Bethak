@@ -1,6 +1,21 @@
 import Editor from "@monaco-editor/react";
 import React, { useRef } from "react";
 
+const editorOptions = {
+    minimap: { enabled: false },
+    fontSize: 14,
+    automaticLayout: true,
+    quickSuggestions: false,
+    parameterHints: { enabled: false },
+    hover: { enabled: false },
+    suggestOnTriggerCharacters: false,
+    wordBasedSuggestions: false,
+    renderWhitespace: "none",
+    scrollBeyondLastLine: false,
+    smoothScrolling: false,
+    renderLineHighlight: "none"
+};
+
 function CodeEditor({ language, code, setCode, template, width = "650px", height = "400px", lockFirstLine = false }) {
     const editorRef = useRef(null);
 
@@ -42,20 +57,7 @@ function CodeEditor({ language, code, setCode, template, width = "650px", height
             theme="vs-dark"
             onChange={handleEditorChange}
             onMount={onMount}
-            options={{
-                minimap: { enabled: false },
-                fontSize: 14,
-                automaticLayout: true,
-                quickSuggestions: false,
-                parameterHints: { enabled: false },
-                hover: { enabled: false },
-                suggestOnTriggerCharacters: false,
-                wordBasedSuggestions: false,
-                renderWhitespace: "none",
-                scrollBeyondLastLine: false,
-                smoothScrolling: false,
-                renderLineHighlight: "none"
-            }}
+            options={editorOptions}
         />
     );
 }

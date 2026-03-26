@@ -2,10 +2,11 @@ const express = require("express");
 const router = express.Router();
 const { runBatch } = require("../utils/judge0");
 const boilerplates = require("../utils/boilerplates");
-const questions = require("../models/questions");
+const questions = require("../models/Question");
 const { auth } = require("../middleware/auth");
 const leaderboard = require("../models/Leaderboard");
 const crypto = require("crypto");
+const redisClient = require("../config/redis");
 
 // Simple In-Memory Cache (LRU-like but just map for now)
 const submissionCache = new Map();
@@ -115,11 +116,19 @@ router.post("/submit", auth, async (req, res) => {
                 leaderboard[existingIndex] = {
                     userId, questionId, language, runtime: maxRuntime, memory: maxMemory, submittedAt: new Date()
                 };
+                // STEP 4: Cache validation (Invalidate Redis exactly for this question's leaderboard)
+                if (redisClient.isAvailable) {
+                    await redisClient.del(`leaderboard:question:${questionId}`);
+                }
             }
         } else {
             leaderboard.push({
                 userId, questionId, language, runtime: maxRuntime, memory: maxMemory, submittedAt: new Date()
             });
+            // STEP 4: Cache Invalidation
+            if (redisClient.isAvailable) {
+                await redisClient.del(`leaderboard:question:${questionId}`);
+            }
         }
 
         res.json(response);

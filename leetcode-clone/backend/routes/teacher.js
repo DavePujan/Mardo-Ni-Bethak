@@ -2,7 +2,8 @@ const router = require("express").Router();
 const { createClient } = require("@supabase/supabase-js");
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-const { auth, teacherOnly } = require("../middleware/auth");
+const { auth, authorize } = require("../middleware/auth");
+const { aiLimiter } = require("../middleware/rateLimiter");
 
 // Mock database for problems
 // In reality, this should be in models/questions.js or independent db
@@ -13,7 +14,7 @@ const Quiz = require("../models/Quiz");
 const Evaluation = require("../models/Evaluation");
 
 // Dashboard Stats
-router.get("/dashboard", auth, teacherOnly, async (req, res) => {
+router.get("/dashboard", auth, authorize('teacher'), async (req, res) => {
     try {
         const { count: quizCount, error: quizError } = await supabase
             .from("quizzes")
@@ -59,7 +60,7 @@ router.get("/dashboard", auth, teacherOnly, async (req, res) => {
 });
 
 // Quiz Management - list all quizzes created by teacher
-router.get("/quiz", auth, teacherOnly, async (req, res) => {
+router.get("/quiz", auth, authorize('teacher'), async (req, res) => {
     try {
         // 1. Get correct UUID from profiles
         const { data: profile } = await supabase.from("profiles").select("id").eq("email", req.user.email).single();
@@ -82,7 +83,7 @@ router.get("/quiz", auth, teacherOnly, async (req, res) => {
 // Create Quiz (Basic) - Keeping as is, but ensuring it uses real DB which it does in full route
 
 // End Quiz
-router.post("/quiz/:id/end", auth, teacherOnly, async (req, res) => {
+router.post("/quiz/:id/end", auth, authorize('teacher'), async (req, res) => {
     try {
         const { id } = req.params;
         const { error } = await supabase
@@ -99,7 +100,7 @@ router.post("/quiz/:id/end", auth, teacherOnly, async (req, res) => {
 });
 
 // Evaluations
-router.get("/evaluations", auth, teacherOnly, async (req, res) => {
+router.get("/evaluations", auth, authorize('teacher'), async (req, res) => {
     try {
         const { data, error } = await supabase
             .from("quiz_attempts")
@@ -130,7 +131,7 @@ router.get("/evaluations", auth, teacherOnly, async (req, res) => {
 });
 
 // Single Evaluation Details
-router.get("/evaluation/:id", auth, teacherOnly, async (req, res) => {
+router.get("/evaluation/:id", auth, authorize('teacher'), async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -196,7 +197,7 @@ router.get("/evaluation/:id", auth, teacherOnly, async (req, res) => {
 });
 
 // Finalize Evaluation (Update marks and status)
-router.post("/evaluation/:id/finalize", auth, teacherOnly, async (req, res) => {
+router.post("/evaluation/:id/finalize", auth, authorize('teacher'), async (req, res) => {
     try {
         const { id } = req.params;
         const { marks } = req.body; // Array of { questionId, marks, isCorrect }
@@ -236,7 +237,7 @@ router.post("/evaluation/:id/finalize", auth, teacherOnly, async (req, res) => {
 
 // Existing route (modified to use Quiz model if needed, but keeping for now)
 // Create Problem (Coding)
-router.post("/problem", auth, teacherOnly, async (req, res) => {
+router.post("/problem", auth, authorize('teacher'), async (req, res) => {
     try {
         const { title, description, functionName, language, inputFormat, outputFormat, testCases } = req.body;
 
@@ -260,7 +261,7 @@ router.post("/problem", auth, teacherOnly, async (req, res) => {
 });
 
 // AI Settings Routes
-router.post("/settings/gemini-key", auth, teacherOnly, async (req, res) => {
+router.post("/settings/gemini-key", auth, authorize('teacher'), async (req, res) => {
     try {
         const { apiKey } = req.body;
         if (!apiKey) return res.status(400).json({ error: "API Key is required" });
@@ -278,7 +279,7 @@ router.post("/settings/gemini-key", auth, teacherOnly, async (req, res) => {
     }
 });
 
-router.get("/settings/gemini-key", auth, teacherOnly, async (req, res) => {
+router.get("/settings/gemini-key", auth, authorize('teacher'), async (req, res) => {
     try {
         const { data, error } = await supabase
             .from("profiles")
@@ -297,7 +298,7 @@ router.get("/settings/gemini-key", auth, teacherOnly, async (req, res) => {
 });
 
 // AI Quiz Generation
-router.post("/ai/generate", auth, teacherOnly, async (req, res) => {
+router.post("/ai/generate", auth, authorize('teacher'), aiLimiter, async (req, res) => {
     try {
         const { prompt } = req.body;
         if (!prompt) return res.status(400).json({ error: "Prompt is required" });
@@ -322,7 +323,7 @@ router.post("/ai/generate", auth, teacherOnly, async (req, res) => {
 });
 
 // Unified Quiz Creation
-router.post("/quiz/full", auth, teacherOnly, async (req, res) => {
+router.post("/quiz/full", auth, authorize('teacher'), aiLimiter, async (req, res) => {
     try {
         const { title, subject, duration, totalMarks, description, questions, department, semester } = req.body;
 
@@ -421,7 +422,7 @@ const judge0 = require("../utils/judge0");
 const ai = require("../utils/ai");
 
 // Auto-Evaluate Attempt
-router.post("/evaluate/:id", auth, teacherOnly, async (req, res) => {
+router.post("/evaluate/:id", auth, authorize('teacher'), aiLimiter, async (req, res) => {
     try {
         const { id } = req.params;
 

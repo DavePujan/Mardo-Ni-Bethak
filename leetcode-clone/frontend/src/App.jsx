@@ -20,6 +20,8 @@ import ActiveQuizzes from "./pages/student/ActiveQuizzes";
 import UpcomingQuizzes from "./pages/student/UpcomingQuizzes";
 import History from "./pages/student/History";
 import AttemptQuiz from "./pages/student/AttemptQuiz";
+import StudentAnalysis from "./pages/student/StudentAnalysis";
+import QuestionReview from "./pages/student/QuestionReview";
 
 // Teacher Pages
 import TeacherDashboard from "./pages/teacher/TeacherDashboard";
@@ -62,6 +64,7 @@ function NavBar() {
               <Link to="/leaderboard" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Leaderboard</Link>
               <Link to="/upcoming" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Upcoming Quizzes</Link>
               <Link to="/history" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">History</Link>
+              <Link to="/student/analysis" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Analysis</Link>
             </>
           )}
         </div>
@@ -99,6 +102,7 @@ function NavBar() {
           <Link to="/leaderboard" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">Leaderboard</Link>
           <Link to="/upcoming" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">Upcoming Quizzes</Link>
           <Link to="/history" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">History</Link>
+          <Link to="/student/analysis" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">Analysis</Link>
           {token && (
             <button onClick={logout} className="text-left text-base font-medium text-red-400 hover:text-red-300 transition-colors pl-2 pt-2 border-t border-gray-800 mt-2">
               Logout
@@ -149,6 +153,23 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <History />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/student/analysis"
+            element={
+              <ProtectedRoute>
+                <StudentAnalysis />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/review/:submissionId"
+            element={
+              <ProtectedRoute>
+                <QuestionReview />
               </ProtectedRoute>
             }
           />

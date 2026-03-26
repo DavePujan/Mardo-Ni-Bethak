@@ -58,7 +58,11 @@ async function getOrInsertTopic(topicName) {
     return newId;
 }
 
+const topicCache = new Map();
+
 async function generateTopic(text) {
+    if (topicCache.has(text)) return topicCache.get(text);
+
     const tokens = tokenizer.tokenize(text.toLowerCase());
 
     // 1. Filter Stopwords
@@ -67,23 +71,34 @@ async function generateTopic(text) {
     // 2. Look for Domain Map hits (High Confidence)
     for (const word of filtered) {
         // Check exact or stemmed
-        if (DOMAIN_MAP[word]) return await getOrInsertTopic(DOMAIN_MAP[word]);
+        if (DOMAIN_MAP[word]) {
+            const id = await getOrInsertTopic(DOMAIN_MAP[word]);
+            console.log(`[Heuristic Classifier] Domain hit '${word}' -> Topic ID: ${id}`);
+            topicCache.set(text, id);
+            return id;
+        }
         const singular = nounInflector.singularize(word);
-        if (DOMAIN_MAP[singular]) return await getOrInsertTopic(DOMAIN_MAP[singular]);
+        if (DOMAIN_MAP[singular]) {
+            const id = await getOrInsertTopic(DOMAIN_MAP[singular]);
+            console.log(`[Heuristic Classifier] Singular hit '${singular}' -> Topic ID: ${id}`);
+            topicCache.set(text, id);
+            return id;
+        }
     }
 
     // 3. Fallback: Extraction of most significant Noun
-    // In a real short question, the "subject" is often the last heavy noun or the first.
-    // E.g. "What is the capital of France?" -> France.
-    // "Solve this equation" -> Equation.
-
+    let finalId;
     if (filtered.length > 0) {
-        // Heuristic: Use the longest word as it's likely the most specific technical term
         const longest = filtered.reduce((a, b) => a.length > b.length ? a : b);
-        return await getOrInsertTopic(longest);
+        finalId = await getOrInsertTopic(longest);
+        console.log(`[Heuristic Classifier] Fallback longest noun '${longest}' -> Topic ID: ${finalId}`);
+    } else {
+        finalId = await getOrInsertTopic("General");
+        console.log(`[Heuristic Classifier] Fallback General -> Topic ID: ${finalId}`);
     }
 
-    return await getOrInsertTopic("General");
+    topicCache.set(text, finalId);
+    return finalId;
 }
 
 module.exports = { generateTopic };

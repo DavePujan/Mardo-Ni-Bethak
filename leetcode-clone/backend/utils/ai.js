@@ -1,5 +1,15 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
+// Provider Abstraction Setup
+const generateAIResponse = async (prompt, apiKey, isJson = true) => {
+    if (!apiKey) throw new Error("AI API Key is required.");
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const config = isJson ? { responseMimeType: "application/json" } : {};
+    const model = genAI.getGenerativeModel({ model: "gemini-flash-latest", generationConfig: config });
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+};
+
 // Helper: Safe JSON Parser
 function safeParseJSON(raw) {
     try {
@@ -20,13 +30,6 @@ function safeParseJSON(raw) {
 
 exports.analyzeCode = async ({ code, question, language, input_format, output_format, max_marks, apiKey }) => {
     try {
-        if (!apiKey) throw new Error("Gemini API Key is required.");
-
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-            model: "gemini-flash-latest",
-            generationConfig: { responseMimeType: "application/json" } // Force JSON mode
-        });
 
         const prompt = `
 You are an academic code evaluator for beginners.
@@ -58,8 +61,7 @@ Return ONLY a valid JSON object with EXACT keys:
 }
 `;
 
-        const result = await model.generateContent(prompt);
-        const raw = result.response.text();
+        const raw = await generateAIResponse(prompt, apiKey, true);
         const parsed = safeParseJSON(raw);
 
         if (!parsed) throw new Error("Invalid AI response: " + raw);
@@ -79,13 +81,6 @@ Return ONLY a valid JSON object with EXACT keys:
 
 exports.generateQuiz = async ({ prompt, apiKey }) => {
     try {
-        if (!apiKey) throw new Error("Gemini API Key is required.");
-
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-            model: "gemini-flash-latest",
-            generationConfig: { responseMimeType: "application/json" } // Force JSON mode
-        });
 
         const aiPrompt = `
 You are a quiz generation assistant.
@@ -116,8 +111,7 @@ IMPORTANT Rules:
 - Be creative with the content but strict with the JSON structure.
 `;
 
-        const result = await model.generateContent(aiPrompt);
-        const raw = result.response.text();
+        const raw = await generateAIResponse(aiPrompt, apiKey, true);
         const parsed = safeParseJSON(raw);
 
         // Expecting an array, but safeParseJSON might return object if wrapped.
@@ -136,10 +130,6 @@ IMPORTANT Rules:
 
 exports.classifyQuestion = async ({ questionText, apiKey }) => {
     try {
-        if (!apiKey) throw new Error("Gemini/Groq API Key is required.");
-
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
         const prompt = `
 You are an expert computer science educator.
@@ -169,8 +159,8 @@ Rules:
 - If unsure, return "Other"
 `;
 
-        const result = await model.generateContent(prompt);
-        const topic = result.response.text().trim();
+        const rawTopic = await generateAIResponse(prompt, apiKey, false);
+        const topic = rawTopic.trim();
 
         // Basic validation against allowing list
         const allowed = [
