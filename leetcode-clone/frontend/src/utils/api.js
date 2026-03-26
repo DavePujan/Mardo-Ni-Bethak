@@ -41,6 +41,7 @@ api.interceptors.response.use(
 );
 
 export const submitCode = (data) => api.post("/api/submit", data);
+export const submitCodeAsync = (data, mode = "submit") => api.post(`/api/submit-async?mode=${mode}`, data);
 export const createProblem = (data) => api.post("/api/teacher/problem", data);
 export const getUsers = () => api.get("/api/admin/users");
 export const promoteUser = (email, role) => api.patch("/api/admin/promote", { email, role });
@@ -65,5 +66,10 @@ export const updateSettings = (settings) => api.post("/api/admin/settings", sett
 export const createFullQuiz = (data) => api.post("/api/teacher/quiz/full", data);
 
 export const deleteUser = (email) => api.delete("/api/admin/user", { data: { email } });
+
+export const getStudentComprehensiveAnalytics = (userId) => api.get(`/api/analytics/student/${userId}/comprehensive`);
+export const getStudentRecommendations = (userId) => api.get(`/api/analytics/student/${userId}/recommendations`);
+export const getStudentRecommendationsV2 = (userId) => api.get(`/api/analytics/student/${userId}/recommendations-v2`);
+export const exportTeacherQuizAnalytics = (quizId) => api.get(`/api/analytics/teacher/quiz/${quizId}/export`, { responseType: "blob" });
 
 export default api;

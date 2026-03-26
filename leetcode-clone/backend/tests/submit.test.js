@@ -1,6 +1,7 @@
 const request = require('supertest');
 const app = require('../server');
 const jwt = require('jsonwebtoken');
+const redisClient = require('../config/redis');
 
 jest.mock('../utils/judge0', () => ({
     run: jest.fn().mockResolvedValue({
@@ -42,5 +43,13 @@ describe("Submission API", () => {
 
         expect(res.statusCode).not.toEqual(404);
         expect(res.statusCode).not.toEqual(401);
+    });
+
+    afterAll(async () => {
+        try {
+            redisClient.disconnect();
+        } catch (e) {
+            // Ignore teardown errors in tests.
+        }
     });
 });

@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0
+      POSTGRES_DB: judge0
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:6
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  api:
+    image: judge0/judge0:1.13.0
+    ports:
+      - "2358:2358"
+    environment:
+      DATABASE_URL: postgres://judge0:judge0@db:5432/judge0
+      REDIS_URL: redis://redis:6379/0
+      RAILS_ENV: production
+      # Force host overrides just in case
+      JUDGE0_POSTGRES_HOST: db
+      JUDGE0_REDIS_HOST: redis
+    depends_on:
+      - db
+      - redis
+    restart: always
+
+  worker:
+    image: judge0/judge0:1.13.0
+    command: ["./scripts/workers"]
+    environment:
+      DATABASE_URL: postgres://judge0:judge0@db:5432/judge0
+      REDIS_URL: redis://redis:6379/0
+      RAILS_ENV: production
+      # Force host overrides just in case
+      JUDGE0_POSTGRES_HOST: db
+      JUDGE0_REDIS_HOST: redis
+    depends_on:
+      - api
+      - db
+      - redis
+    restart: always
+
+volumes:
+  postgres-data:
+  redis-data:

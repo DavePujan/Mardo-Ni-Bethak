@@ -326,17 +326,31 @@ Prevents abuse on:
 
 ---
 
-### ✔ Background Jobs
+### ✔ Background Jobs (BullMQ — IMPLEMENTED)
 
 For:
 
-- AI grading
-- Analytics processing
+- Code submission execution (Judge0)
+- AI-powered evaluation feedback
 
-Use:
+Architecture:
 
-- BullMQ + Redis
-- Or Supabase queues
+```
+User → POST /api/submit-async → BullMQ Queue → Worker → Judge0 + AI → Result
+User → GET /api/job/:jobId → Poll status (waiting/active/completed/failed)
+```
+
+Run worker separately:
+
+```bash
+node workers/submission.worker.js
+```
+
+Features:
+
+- 3 automatic retries with exponential backoff
+- Concurrency: 3 simultaneous jobs
+- Redis-backed persistence (survives server restarts)
 
 ---
 

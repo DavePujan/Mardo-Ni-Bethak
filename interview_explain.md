@@ -178,6 +178,14 @@ We’ll use Redis for:
 
 → logout
 
+**bullmq**
+Used for →
+
+- Async job queue for code submissions (non-blocking API responses)
+- Background workers process Judge0 + AI evaluation independently
+- Exponential retry with configurable backoff on failure
+- Job status polling via `GET /api/job/:jobId`
+
 **prom-client**
 Used for →
 
@@ -212,9 +220,9 @@ We’ll use Redis for:
 - **Grafana Dashboard**: `http://localhost:3000` (Login: **`admin`** / **`admin`**)
 - **Prometheus Metrics**: `http://localhost:9090` (or `http://localhost:5000/metrics`)
 - **Container Management**:
-  - `docker start quiz-redis` / `docker stop quiz-redis`
-  - `docker start prometheus` / `docker stop prometheus`
-  - `docker start grafana` / `docker stop grafana`
+  - Preferred: `cd leetcode-clone/backend && npm run infra:up` / `npm run infra:down`
+  - Direct starts: `docker start quiz-redis quiz-prometheus quiz-grafana`
+  - Judge stack (existing containers): `docker start judge0-official-db-1 judge0-official-redis-1 judge0-official-server-1 judge0-official-worker-1`
 
 ---
 

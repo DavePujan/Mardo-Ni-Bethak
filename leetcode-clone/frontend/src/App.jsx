@@ -22,6 +22,8 @@ import History from "./pages/student/History";
 import AttemptQuiz from "./pages/student/AttemptQuiz";
 import StudentAnalysis from "./pages/student/StudentAnalysis";
 import QuestionReview from "./pages/student/QuestionReview";
+import Practice from "./pages/student/Practice";
+import PracticeQuiz from "./pages/student/PracticeQuiz";
 
 // Teacher Pages
 import TeacherDashboard from "./pages/teacher/TeacherDashboard";
@@ -47,7 +49,14 @@ function NavBar() {
 
   // Don't show Navbar for Teacher/Admin as they have Sidebar
   // Also don't show for Quiz Attempt page
-  if (role === "teacher" || role === "admin" || location.pathname.includes("/student/quiz/") || location.pathname === "/request-access" || location.pathname === "/login") return null;
+  if (
+    role === "teacher" ||
+    role === "admin" ||
+    location.pathname.includes("/student/quiz/") ||
+    location.pathname === "/request-access" ||
+    location.pathname === "/login" ||
+    location.pathname === "/maintenance"
+  ) return null;
 
   return (
     <nav className="flex flex-col px-6 py-4 bg-background-layer1 border-b border-gray-800 sticky top-0 z-50 shadow-md">
@@ -65,6 +74,7 @@ function NavBar() {
               <Link to="/upcoming" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Upcoming Quizzes</Link>
               <Link to="/history" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">History</Link>
               <Link to="/student/analysis" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Analysis</Link>
+              <Link to="/student/practice" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Practice</Link>
             </>
           )}
         </div>
@@ -103,6 +113,7 @@ function NavBar() {
           <Link to="/upcoming" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">Upcoming Quizzes</Link>
           <Link to="/history" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">History</Link>
           <Link to="/student/analysis" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">Analysis</Link>
+          <Link to="/student/practice" onClick={() => setIsMenuOpen(false)} className="text-base font-medium text-gray-400 hover:text-white transition-colors pl-2">Practice</Link>
           {token && (
             <button onClick={logout} className="text-left text-base font-medium text-red-400 hover:text-red-300 transition-colors pl-2 pt-2 border-t border-gray-800 mt-2">
               Logout
@@ -162,6 +173,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <StudentAnalysis />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/practice"
+            element={
+              <ProtectedRoute>
+                <Practice />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/student/practice/quiz/:id"
+            element={
+              <ProtectedRoute>
+                <PracticeQuiz />
               </ProtectedRoute>
             }
           />

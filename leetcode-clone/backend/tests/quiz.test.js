@@ -1,6 +1,7 @@
 const request = require('supertest');
 const app = require('../server');
 const jwt = require('jsonwebtoken');
+const redisClient = require('../config/redis');
 
 // Mock DB
 jest.mock('@supabase/supabase-js', () => ({
@@ -40,5 +41,13 @@ describe("Quiz Creation API", () => {
         expect(res.statusCode).not.toEqual(404);
         expect(res.statusCode).not.toEqual(401);
         expect(res.statusCode).not.toEqual(403);
+    });
+
+    afterAll(async () => {
+        try {
+            redisClient.disconnect();
+        } catch (e) {
+            // Ignore teardown errors in tests.
+        }
     });
 });

@@ -1,8 +1,171 @@
 const router = require("express").Router();
 const { createClient } = require("@supabase/supabase-js");
 const { auth } = require("../middleware/auth");
+const { analyzeCode } = require("../utils/ai");
+const pool = require("../db");
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const examBehaviorSessions = new Map();
+
+const BEHAVIOR_WEIGHTS = {
+    fullscreen_exit: 20,
+    tab_switch: 15,
+    window_blur: 10,
+    copy_paste: 25,
+    devtools_open: 40
+};
+
+function getBehaviorKey(userId, quizId) {
+    return `${userId}:${quizId}`;
+}
+
+function computeRisk(rawScore) {
+    const score = Math.min(100, Math.max(0, rawScore));
+    if (score < 20) return { score, risk: "Safe" };
+    if (score < 50) return { score, risk: "Suspicious" };
+    if (score < 80) return { score, risk: "High Risk" };
+    return { score, risk: "Cheating" };
+}
+
+function isSupabaseNetworkError(err) {
+    const text = `${err?.message || ""} ${err?.details || ""}`.toLowerCase();
+    return text.includes("enotfound") || text.includes("connecttimeouterror") || text.includes("und_err_connect_timeout") || text.includes("fetch failed");
+}
+
+async function ensureAttemptShuffleColumns() {
+    await pool.query(`
+        ALTER TABLE quiz_attempts
+        ADD COLUMN IF NOT EXISTS question_order JSONB DEFAULT '[]'::jsonb;
+    `);
+
+    await pool.query(`
+        ALTER TABLE quiz_attempts
+        ADD COLUMN IF NOT EXISTS option_order JSONB DEFAULT '{}'::jsonb;
+    `);
+}
+
+function hashSeed(input) {
+    let h = 2166136261;
+    for (let i = 0; i < input.length; i += 1) {
+        h ^= input.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+function seededRandom(seed) {
+    let t = seed + 0x6d2b79f5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+function deterministicShuffle(items, seedInput) {
+    const arr = [...items];
+    let seed = hashSeed(seedInput);
+    for (let i = arr.length - 1; i > 0; i -= 1) {
+        seed += 1;
+        const j = Math.floor(seededRandom(seed) * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
+async function ensureBehaviorTable() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS exam_behavior_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID,
+            quiz_id UUID,
+            attempt_id UUID,
+            tab_switches INTEGER DEFAULT 0,
+            fullscreen_exits INTEGER DEFAULT 0,
+            window_blurs INTEGER DEFAULT 0,
+            copy_events INTEGER DEFAULT 0,
+            devtools_attempts INTEGER DEFAULT 0,
+            final_score INTEGER DEFAULT 0,
+            risk_level TEXT DEFAULT 'Safe',
+            reasons JSONB DEFAULT '[]'::jsonb,
+            event_timeline JSONB DEFAULT '[]'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (user_id, quiz_id, attempt_id)
+        );
+    `);
+}
+
+async function persistBehaviorForAttempt(userId, quizId, attemptId) {
+    const sessionKey = getBehaviorKey(userId, quizId);
+    const session = examBehaviorSessions.get(sessionKey) || {
+        tab_switches: 0,
+        fullscreen_exits: 0,
+        window_blurs: 0,
+        copy_events: 0,
+        devtools_attempts: 0,
+        reasons: [],
+        timeline: []
+    };
+
+    const rawScore =
+        (session.fullscreen_exits || 0) * BEHAVIOR_WEIGHTS.fullscreen_exit +
+        (session.tab_switches || 0) * BEHAVIOR_WEIGHTS.tab_switch +
+        (session.window_blurs || 0) * BEHAVIOR_WEIGHTS.window_blur +
+        (session.copy_events || 0) * BEHAVIOR_WEIGHTS.copy_paste +
+        (session.devtools_attempts || 0) * BEHAVIOR_WEIGHTS.devtools_open;
+
+    const { score, risk } = computeRisk(rawScore);
+    await ensureBehaviorTable();
+
+    await pool.query(
+        `
+            INSERT INTO exam_behavior_logs (
+                user_id,
+                quiz_id,
+                attempt_id,
+                tab_switches,
+                fullscreen_exits,
+                window_blurs,
+                copy_events,
+                devtools_attempts,
+                final_score,
+                risk_level,
+                reasons,
+                event_timeline,
+                updated_at
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,NOW())
+            ON CONFLICT (user_id, quiz_id, attempt_id)
+            DO UPDATE SET
+                tab_switches = EXCLUDED.tab_switches,
+                fullscreen_exits = EXCLUDED.fullscreen_exits,
+                window_blurs = EXCLUDED.window_blurs,
+                copy_events = EXCLUDED.copy_events,
+                devtools_attempts = EXCLUDED.devtools_attempts,
+                final_score = EXCLUDED.final_score,
+                risk_level = EXCLUDED.risk_level,
+                reasons = EXCLUDED.reasons,
+                event_timeline = EXCLUDED.event_timeline,
+                updated_at = NOW();
+        `,
+        [
+            userId,
+            quizId,
+            attemptId,
+            session.tab_switches || 0,
+            session.fullscreen_exits || 0,
+            session.window_blurs || 0,
+            session.copy_events || 0,
+            session.devtools_attempts || 0,
+            score,
+            risk,
+            JSON.stringify(session.reasons || []),
+            JSON.stringify(session.timeline || [])
+        ]
+    );
+
+    examBehaviorSessions.delete(sessionKey);
+    return { score, risk };
+}
 
 // Get All Active Quizzes for Students
 router.get("/quizzes", auth, async (req, res) => {
@@ -15,10 +178,10 @@ router.get("/quizzes", auth, async (req, res) => {
             .select("*, creator:profiles!created_by(full_name, email)")
             .order("created_at", { ascending: false });
 
-        console.log(`[Student] Fetching quizzes for ${req.user.email} (ID: ${req.user.id})`);
-        console.log(`[Student] Found ${quizzes?.length || 0} quizzes`, error ? error : "");
-
         if (error) throw error;
+
+        console.log(`[Student] Fetching quizzes for ${req.user.email} (ID: ${req.user.id})`);
+        console.log(`[Student] Found ${quizzes?.length || 0} quizzes`);
 
         // Fetch correct profile UUID to check attempts (req.user.id is legacy Integer)
         const { data: profile } = await supabase
@@ -27,7 +190,7 @@ router.get("/quizzes", auth, async (req, res) => {
             .eq("email", req.user.email)
             .single();
 
-        const userId = profile?.id;
+        const userId = profile?.id || req.user.id;
 
         // Fetch attempt status for each quiz for this user
         const { data: attempts } = await supabase
@@ -81,6 +244,10 @@ router.get("/quizzes", auth, async (req, res) => {
             res.json({ active, upcoming });
         }
     } catch (err) {
+        if (isSupabaseNetworkError(err)) {
+            console.error("Fetch Quizzes Error: Supabase unreachable (DNS/timeout)");
+            return res.status(503).json({ error: "Database service temporarily unreachable. Please retry in a moment." });
+        }
         console.error("Fetch Quizzes Error:", err);
         res.status(500).json({ error: err.message });
     }
@@ -96,7 +263,11 @@ router.get("/history", auth, async (req, res) => {
             .eq("email", req.user.email)
             .single();
 
-        const userId = profile?.id;
+        const userId = profile?.id || req.user.id;
+
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
         console.log(`[History] Fetching history for email: ${req.user.email}, Profile ID: ${userId}`);
 
         if (!userId) {
@@ -127,6 +298,10 @@ router.get("/history", auth, async (req, res) => {
 
         res.json(history);
     } catch (err) {
+        if (isSupabaseNetworkError(err)) {
+            console.error("Fetch History Error: Supabase unreachable (DNS/timeout)");
+            return res.status(503).json({ error: "Database service temporarily unreachable. Please retry in a moment." });
+        }
         console.error("Fetch History Error:", err);
         res.status(500).json({ error: err.message });
     }
@@ -173,17 +348,40 @@ router.get("/quiz/:id", auth, async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Check if already attempted
-        const { data: existingAttempt } = await supabase
+        await ensureAttemptShuffleColumns();
+
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("email", req.user.email)
+            .single();
+        const userId = profile?.id || req.user.id;
+
+        // Strict one-attempt rule: block if already submitted/evaluated.
+        const { data: finalAttempt } = await supabase
             .from("quiz_attempts")
             .select("id, status")
-            .eq("user_id", req.user.id)
+            .eq("user_id", userId)
             .eq("quiz_id", id)
-            .single();
+            .in("status", ["submitted", "evaluated"])
+            .order("completed_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        if (existingAttempt && existingAttempt.status !== "in_progress") { // Strict one-time rule? User said "only once".
+        if (finalAttempt) {
             return res.status(403).json({ error: "You have already attempted this quiz." });
         }
+
+        // Resume existing in-progress attempt if available.
+        const { data: inProgressAttempt } = await supabase
+            .from("quiz_attempts")
+            .select("id, status, question_order, option_order")
+            .eq("user_id", userId)
+            .eq("quiz_id", id)
+            .eq("status", "in_progress")
+            .order("started_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
         // Fetch Quiz Metadata
         const { data: quiz, error: quizError } = await supabase
@@ -224,13 +422,97 @@ router.get("/quiz/:id", auth, async (req, res) => {
                     .eq("is_hidden", false);
                 q.testCases = visibleTests || [];
             }
+
             return {
                 ...q,
                 weightage: item.weightage
             };
         }));
 
-        res.json({ ...quiz, questions: questionsWithDetails });
+        const canonicalIds = questionsWithDetails.map((q) => q.id);
+        const savedOrder = Array.isArray(inProgressAttempt?.question_order)
+            ? inProgressAttempt.question_order.map((x) => String(x))
+            : [];
+
+        let questionOrder = [];
+        const hasValidSavedOrder =
+            savedOrder.length === canonicalIds.length &&
+            savedOrder.every((qid) => canonicalIds.includes(qid));
+
+        if (hasValidSavedOrder) {
+            questionOrder = savedOrder;
+        } else {
+            questionOrder = deterministicShuffle(
+                canonicalIds.map((x) => String(x)),
+                `${userId}:${id}`
+            );
+        }
+
+        // Build/stabilize per-attempt option order for MCQ options.
+        const savedOptionOrder = inProgressAttempt?.option_order && typeof inProgressAttempt.option_order === "object"
+            ? inProgressAttempt.option_order
+            : {};
+        const optionOrder = {};
+
+        for (const q of questionsWithDetails) {
+            if (q.type !== "mcq" || !Array.isArray(q.mcq_options) || q.mcq_options.length <= 1) {
+                continue;
+            }
+
+            const optionIds = q.mcq_options.map((o) => String(o.id));
+            const saved = Array.isArray(savedOptionOrder[String(q.id)])
+                ? savedOptionOrder[String(q.id)].map((x) => String(x))
+                : [];
+
+            const hasValidSavedOptions =
+                saved.length === optionIds.length &&
+                saved.every((oid) => optionIds.includes(oid));
+
+            const finalOrder = hasValidSavedOptions
+                ? saved
+                : deterministicShuffle(optionIds, `${userId}:${id}:${q.id}:options`);
+
+            optionOrder[String(q.id)] = finalOrder;
+
+            const optionMap = new Map(q.mcq_options.map((o) => [String(o.id), o]));
+            q.mcq_options = finalOrder.map((oid) => optionMap.get(String(oid))).filter(Boolean);
+        }
+
+        if (inProgressAttempt) {
+            await supabase
+                .from("quiz_attempts")
+                .update({
+                    question_order: questionOrder,
+                    option_order: optionOrder
+                })
+                .eq("id", inProgressAttempt.id);
+        } else {
+            await supabase
+                .from("quiz_attempts")
+                .insert({
+                    user_id: userId,
+                    quiz_id: id,
+                    status: "in_progress",
+                    started_at: new Date(),
+                    question_order: questionOrder,
+                    option_order: optionOrder
+                });
+        }
+
+        const questionMap = new Map(questionsWithDetails.map((q) => [String(q.id), q]));
+        const orderedQuestions = questionOrder
+            .map((qid) => questionMap.get(String(qid)))
+            .filter(Boolean);
+
+        // Fallback: include any unmatched question IDs at end to avoid data loss.
+        const leftovers = questionsWithDetails.filter((q) => !questionOrder.includes(String(q.id)));
+
+        res.json({
+            ...quiz,
+            randomized: true,
+            randomization_note: "Questions and options are randomized for fairness.",
+            questions: [...orderedQuestions, ...leftovers]
+        });
 
     } catch (err) {
         console.error("Fetch Single Quiz Error:", err);
@@ -246,24 +528,60 @@ router.post("/quiz/:id/attempt", auth, async (req, res) => {
         const { data: profile } = await supabase.from("profiles").select("id").eq("email", req.user.email).single();
         const userId = profile.id;
 
+        await ensureAttemptShuffleColumns();
+
         // 1. Start Transaction (Simulated)
-        // Check uniqueness again
-        const { data: existing } = await supabase.from("quiz_attempts").select("id").eq("user_id", userId).eq("quiz_id", id).single();
-        if (existing) return res.status(400).json({ error: "Attempt already exists" });
-
-        // 2. Create Attempt Record
-        const { data: attempt, error: attemptError } = await supabase
+        // Block duplicate final submissions
+        const { data: existingFinal } = await supabase
             .from("quiz_attempts")
-            .insert({
-                user_id: userId,
-                quiz_id: id,
-                status: "submitted", // Or 'evaluated' if immediate
-                completed_at: new Date()
-            })
-            .select()
-            .single();
+            .select("id, status")
+            .eq("user_id", userId)
+            .eq("quiz_id", id)
+            .in("status", ["submitted", "evaluated"])
+            .order("completed_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (existingFinal) return res.status(400).json({ error: "Attempt already exists" });
 
-        if (attemptError) throw attemptError;
+        // Reuse existing in-progress attempt if present (contains question_order).
+        const { data: inProgressAttempt } = await supabase
+            .from("quiz_attempts")
+            .select("id, question_order")
+            .eq("user_id", userId)
+            .eq("quiz_id", id)
+            .eq("status", "in_progress")
+            .order("started_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        // Fetch total marks so percentages and ranking are computed correctly.
+        const { data: quizMeta, error: quizMetaError } = await supabase
+            .from("quizzes")
+            .select("total_marks")
+            .eq("id", id)
+            .single();
+        if (quizMetaError) throw quizMetaError;
+        const totalMarks = Number(quizMeta?.total_marks || 0);
+
+        let attempt = inProgressAttempt;
+        if (!attempt) {
+            const { data: createdAttempt, error: attemptError } = await supabase
+                .from("quiz_attempts")
+                .insert({
+                    user_id: userId,
+                    quiz_id: id,
+                    status: "in_progress",
+                    total_marks: totalMarks,
+                    started_at: new Date(),
+                    completed_at: null,
+                    question_order: []
+                })
+                .select()
+                .single();
+
+            if (attemptError) throw attemptError;
+            attempt = createdAttempt;
+        }
 
         // 3. Process Answers & Calculate Score (Basic Auto-Eval for MCQ)
         let totalScore = 0;
@@ -277,13 +595,13 @@ router.post("/quiz/:id/attempt", auth, async (req, res) => {
                 weightage,
                 question:questions (
                     id, type,
-                    mcq_options (option_text, is_correct)
+                    mcq_options (id, option_text, is_correct)
                 )
             `)
             .eq("quiz_id", id);
 
         for (const userAns of answers) {
-            const questionData = quizQuestions.find(q => q.question.id === userAns.questionId);
+            const questionData = quizQuestions.find(q => String(q.question.id) === String(userAns.questionId));
             if (!questionData) continue;
 
             const q = questionData.question;
@@ -293,9 +611,19 @@ router.post("/quiz/:id/attempt", auth, async (req, res) => {
 
             if (q.type === 'mcq') {
                 const correctOpt = q.mcq_options.find(o => o.is_correct);
-                if (correctOpt && correctOpt.option_text === userAns.selectedOption) {
+                const selectedOptionId = userAns.selectedOptionId ? String(userAns.selectedOptionId) : null;
+
+                if (selectedOptionId && correctOpt && String(correctOpt.id) === selectedOptionId) {
                     isCorrect = true;
                     marks = weight;
+                } else {
+                    // Backward compatibility for older clients that send text only.
+                    const normalizedCorrect = (correctOpt?.option_text || "").trim().toLowerCase();
+                    const normalizedSelected = (userAns.selectedOption || "").trim().toLowerCase();
+                    if (correctOpt && normalizedCorrect && normalizedCorrect === normalizedSelected) {
+                        isCorrect = true;
+                        marks = weight;
+                    }
                 }
             } else if (q.type === 'code') {
                 // TODO: Trigger Judge0 or leave for manual teacher review.
@@ -315,25 +643,141 @@ router.post("/quiz/:id/attempt", auth, async (req, res) => {
             });
         }
 
-        // 4. Update Attempt Score
-        await supabase.from("quiz_attempts").update({ score: totalScore, status: "evaluated" }).eq("id", attempt.id);
-        // Note: If code questions exist, status might need to be 'submitted' (pending eval). 
-        // Let's check if any code questions?
-        const hasCode = quizQuestions.some(q => q.question.type === 'code');
-        if (hasCode) {
-            await supabase.from("quiz_attempts").update({ status: "submitted" }).eq("id", attempt.id);
-        }
+        // 4. Update Attempt Score (keep status as submitted so it appears in teacher evaluations)
+        await supabase.from("quiz_attempts").update({ score: totalScore, status: "submitted" }).eq("id", attempt.id);
 
-        // 5. Insert Details
+        // 5. Replace answer details for this attempt (idempotent submit path)
+        await supabase.from("quiz_answers").delete().eq("attempt_id", attempt.id);
+
+        // 6. Insert Details
         if (answerInserts.length > 0) {
             await supabase.from("quiz_answers").insert(answerInserts);
         }
 
-        res.json({ message: "Quiz submitted successfully", score: totalScore, attemptId: attempt.id });
+        await supabase
+            .from("quiz_attempts")
+            .update({
+                score: totalScore,
+                status: "submitted",
+                total_marks: totalMarks,
+                completed_at: new Date()
+            })
+            .eq("id", attempt.id);
+
+        let integrity = { score: 0, risk: "Safe" };
+        try {
+            integrity = await persistBehaviorForAttempt(userId, id, attempt.id);
+        } catch (integrityErr) {
+            console.error("Integrity log persist failed:", integrityErr.message);
+        }
+
+        res.json({
+            message: "Quiz submitted successfully",
+            score: totalScore,
+            attemptId: attempt.id,
+            integrity
+        });
 
     } catch (err) {
         console.error("Submit Quiz Error:", err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Real exam secure mode event tracking
+router.post("/quiz/:id/integrity-event", auth, async (req, res) => {
+    try {
+        const { id: quizId } = req.params;
+        const { event, timestamp, meta } = req.body || {};
+
+        if (!event) {
+            return res.status(400).json({ error: "event is required" });
+        }
+
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("email", req.user.email)
+            .single();
+
+        const userId = profile?.id || req.user.id;
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        // Ignore integrity events after final submission for this user+quiz.
+        const { data: submittedAttempt, error: attemptStatusError } = await supabase
+            .from("quiz_attempts")
+            .select("id, status")
+            .eq("user_id", userId)
+            .eq("quiz_id", quizId)
+            .in("status", ["submitted", "evaluated"])
+            .order("completed_at", { ascending: false })
+            .limit(1);
+
+        if (attemptStatusError) {
+            throw attemptStatusError;
+        }
+
+        if (submittedAttempt && submittedAttempt.length > 0) {
+            examBehaviorSessions.delete(getBehaviorKey(userId, quizId));
+            return res.json({
+                ok: true,
+                ignored: true,
+                reason: "attempt-already-submitted"
+            });
+        }
+
+        const key = getBehaviorKey(userId, quizId);
+        const base = examBehaviorSessions.get(key) || {
+            tab_switches: 0,
+            fullscreen_exits: 0,
+            window_blurs: 0,
+            copy_events: 0,
+            devtools_attempts: 0,
+            reasons: [],
+            timeline: []
+        };
+
+        if (event === "tab_switch") base.tab_switches += 1;
+        if (event === "fullscreen_exit") base.fullscreen_exits += 1;
+        if (event === "window_blur") base.window_blurs += 1;
+        if (event === "copy_paste") base.copy_events += 1;
+        if (event === "devtools_open") base.devtools_attempts += 1;
+
+        const reasonText = `${event}${meta?.details ? `: ${meta.details}` : ""}`;
+        base.reasons.push(reasonText);
+        base.timeline.push({
+            event,
+            timestamp: timestamp || Date.now(),
+            meta: meta || {}
+        });
+
+        const rawScore =
+            base.fullscreen_exits * BEHAVIOR_WEIGHTS.fullscreen_exit +
+            base.tab_switches * BEHAVIOR_WEIGHTS.tab_switch +
+            base.window_blurs * BEHAVIOR_WEIGHTS.window_blur +
+            base.copy_events * BEHAVIOR_WEIGHTS.copy_paste +
+            base.devtools_attempts * BEHAVIOR_WEIGHTS.devtools_open;
+        const { score, risk } = computeRisk(rawScore);
+
+        examBehaviorSessions.set(key, base);
+
+        return res.json({
+            ok: true,
+            score,
+            risk,
+            counters: {
+                tab_switches: base.tab_switches,
+                fullscreen_exits: base.fullscreen_exits,
+                window_blurs: base.window_blurs,
+                copy_events: base.copy_events,
+                devtools_attempts: base.devtools_attempts
+            }
+        });
+    } catch (err) {
+        console.error("Integrity event error:", err);
+        return res.status(500).json({ error: "Failed to record integrity event" });
     }
 });
 
@@ -379,14 +823,17 @@ router.post("/quiz/:id/run", auth, async (req, res) => {
                 return `${code}\n\n# Driver Code\nimport sys\ninput_data = sys.stdin.read().strip().split()\nargs = [int(x) for x in input_data]\nprint(solution(*args))`;
             } else if (lang === "cpp") {
                 return `#include <iostream>\n#include <vector>\n#include <sstream>\nusing namespace std;\n\n${code}\n\nint main() {\n    // Simplified C++ driver for demo "a b"\n    // Assuming solution(int, int)\n    int a, b;\n    if (cin >> a >> b) cout << solution(a, b) << endl;\n    return 0;\n}`;
+            } else if (lang === "java") {
+                return `import java.util.*;\n\npublic class Main {\n${code}\n\npublic static void main(String[] args) {\n    Scanner sc = new Scanner(System.in);\n    int a = sc.nextInt();\n    int b = sc.nextInt();\n    System.out.print(solution(a, b));\n}\n}`;
+            } else if (lang === "php") {
+                return `<?php\n${code}\n\n$input = trim(stream_get_contents(STDIN));\n$parts = preg_split('/\\\\s+/', $input);\n$args = array_map('intval', $parts);\necho solution(...$args);\n?>`;
             }
             return code;
         };
 
         const finalCode = wrapCode(code, language);
-        // Map language name to ID
-        // JS: 63, Python: 71, C++: 54
-        const langId = language === "python" ? 71 : language === "cpp" ? 54 : 63;
+        // Map language name to ID via shared resolver
+        const langId = judge0.resolveLanguageId(language);
 
         // 3. Run on Judge0
         const result = await judge0.run({
@@ -435,7 +882,20 @@ router.get("/history/:attemptId", auth, async (req, res) => {
         // 1. Verify Attempt ownership
         const { data: attempt, error: attemptError } = await supabase
             .from("quiz_attempts")
-            .select("id, quiz_id, score, total_marks, status, created_at, completed_at")
+            .select(`
+                id,
+                quiz_id,
+                score,
+                status,
+                started_at,
+                completed_at,
+                quiz:quizzes (
+                    id,
+                    title,
+                    subject,
+                    total_marks
+                )
+            `)
             .eq("id", attemptId)
             .eq("user_id", userId)
             .single();
@@ -454,36 +914,94 @@ router.get("/history/:attemptId", auth, async (req, res) => {
                 submitted_code,
                 is_correct,
                 marks_awarded,
+                marks_obtained,
+                feedback,
+                ai_analysis,
+                test_cases_passed,
+                total_test_cases,
                 question:questions (
-                    id, title, type, difficulty, explanation, weightage,
+                    id, title, type, language, input_format, output_format, weightage,
                     mcq_options (option_text, is_correct)
                 )
             `)
             .eq("attempt_id", attemptId);
 
+        if (!answers || answers.length === 0) {
+            return res.json({
+                ...attempt,
+                questions: []
+            });
+        }
+
         // 3. Transform Data
-        const questions = answers.map((ans, idx) => {
-            const q = ans.question;
-            const options = q.mcq_options.map(o => o.option_text);
-            const correctOptionIndex = q.mcq_options.findIndex(o => o.is_correct);
-            const userOptionIndex = q.mcq_options.findIndex(o => o.option_text === ans.selected_option);
+        const questions = await Promise.all(answers.map(async (ans) => {
+            const q = ans.question || {};
+            const options = Array.isArray(q.mcq_options) ? q.mcq_options.map(o => o.option_text) : [];
+            const correctOptionIndex = Array.isArray(q.mcq_options) ? q.mcq_options.findIndex(o => o.is_correct) : -1;
+            const userOptionIndex = Array.isArray(q.mcq_options) ? q.mcq_options.findIndex(o => o.option_text === ans.selected_option) : -1;
+            const marksObtained = Number(ans.marks_awarded ?? ans.marks_obtained ?? 0);
+            const marks = Number(q.weightage || 1);
+
+            const difficulty = marks <= 10 ? "easy" : marks <= 20 ? "medium" : "hard";
+
+            let codeReview = null;
+            if (q.type === "code") {
+                const { data: sampleTests } = await supabase
+                    .from("testcases")
+                    .select("input, expected_output")
+                    .eq("question_id", q.id)
+                    .eq("is_hidden", false)
+                    .order("id", { ascending: true })
+                    .limit(3);
+
+                const existingAi = ans.ai_analysis && typeof ans.ai_analysis === "object"
+                    ? ans.ai_analysis
+                    : null;
+
+                let generatedAi = null;
+                const aiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+                if (!existingAi && ans.submitted_code && aiKey) {
+                    generatedAi = await analyzeCode({
+                        code: ans.submitted_code,
+                        question: q.title,
+                        language: q.language || "javascript",
+                        input_format: q.input_format,
+                        output_format: q.output_format,
+                        max_marks: marks,
+                        apiKey: aiKey
+                    });
+                }
+
+                const finalAi = existingAi || generatedAi;
+
+                codeReview = {
+                    submittedCode: ans.submitted_code || "",
+                    feedback: ans.feedback || finalAi?.feedback || "Code reviewed. Focus on edge cases and output formatting.",
+                    suggestions: finalAi?.suggestions || "",
+                    logicScore: finalAi?.logic_score,
+                    passed: ans.test_cases_passed,
+                    total: ans.total_test_cases,
+                    sampleTests: sampleTests || []
+                };
+            }
 
             return {
                 id: q.id,
                 title: q.title,
                 type: q.type,
-                difficulty: q.difficulty || "medium",
-                marks: q.weightage,
-                marksObtained: ans.marks_awarded,
-                // Mock time spent per question if not tracked
-                timeSpent: "45s",
-                isCorrect: ans.is_correct,
-                userAnswer: userOptionIndex, // Index for Frontend
-                correctAnswer: correctOptionIndex, // Index for Frontend
-                options: options,
-                explanation: q.explanation
+                language: q.language,
+                difficulty,
+                marks,
+                marksObtained,
+                isCorrect: Boolean(ans.is_correct),
+                userAnswer: userOptionIndex,
+                userAnswerText: ans.selected_option,
+                correctAnswer: correctOptionIndex,
+                correctAnswerText: correctOptionIndex >= 0 ? options[correctOptionIndex] : null,
+                options,
+                codeReview
             };
-        });
+        }));
 
         res.json({
             ...attempt,
@@ -493,6 +1011,119 @@ router.get("/history/:attemptId", auth, async (req, res) => {
     } catch (err) {
         console.error("Detailed History Error:", err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Practice quiz payload (untimed, non-persistent)
+router.get("/practice/quiz/:id", auth, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const quizResult = await pool.query(
+            `
+                SELECT id, title, COALESCE(subject, 'General') AS subject, COALESCE(total_marks, 0) AS total_marks
+                FROM quizzes
+                WHERE id = $1
+                LIMIT 1;
+            `,
+            [id]
+        );
+
+        if (quizResult.rows.length === 0) {
+            return res.status(404).json({ error: "Quiz not found" });
+        }
+
+        const questionsResult = await pool.query(
+            `
+                SELECT
+                    q.id,
+                    q.title,
+                    LOWER(COALESCE(q.type, 'mcq')) AS type,
+                    q.language,
+                    q.input_format,
+                    q.output_format,
+                    COALESCE(t.name, 'General') AS topic,
+                    COALESCE(qqm.weightage, q.weightage, 1) AS weightage,
+                    COALESCE(
+                      json_agg(
+                        json_build_object(
+                          'id', mo.id,
+                          'option_text', mo.option_text,
+                          'is_correct', mo.is_correct
+                        ) ORDER BY mo.id
+                      ) FILTER (WHERE mo.id IS NOT NULL),
+                      '[]'::json
+                    ) AS options
+                FROM quiz_questions_map qqm
+                JOIN questions q ON q.id = qqm.question_id
+                LEFT JOIN topics t ON t.id = q.topic_id
+                LEFT JOIN mcq_options mo ON mo.question_id = q.id
+                WHERE qqm.quiz_id = $1
+                GROUP BY q.id, q.title, q.type, q.language, q.input_format, q.output_format, t.name, qqm.weightage, q.weightage
+                ORDER BY q.created_at ASC;
+            `,
+            [id]
+        );
+
+        return res.json({
+            mode: "practice",
+            timed: false,
+            persistent: false,
+            quiz: quizResult.rows[0],
+            questions: questionsResult.rows
+        });
+    } catch (err) {
+        console.error("Practice quiz fetch error:", err);
+        return res.status(500).json({ error: "Failed to load practice quiz" });
+    }
+});
+
+// AI-only code feedback for practice mode (no persistence)
+router.post("/practice/code-feedback", auth, async (req, res) => {
+    try {
+        const {
+            questionText,
+            code,
+            language,
+            input_format,
+            output_format,
+            max_marks
+        } = req.body || {};
+
+        if (!code || !questionText) {
+            return res.status(400).json({ error: "questionText and code are required" });
+        }
+
+        const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+        if (!apiKey) {
+            return res.json({
+                logicScore: 0,
+                isLikelyCorrect: false,
+                feedback: "AI key not configured. Code review is unavailable in this environment.",
+                suggestions: ""
+            });
+        }
+
+        const analysis = await analyzeCode({
+            code,
+            question: questionText,
+            language: language || "javascript",
+            input_format,
+            output_format,
+            max_marks: Number(max_marks || 1),
+            apiKey
+        });
+
+        const logicScore = Number(analysis.logic_score || 0);
+        return res.json({
+            logicScore,
+            isLikelyCorrect: logicScore >= 0.7,
+            feedback: analysis.feedback || "",
+            suggestions: analysis.suggestions || ""
+        });
+    } catch (err) {
+        console.error("Practice code feedback error:", err);
+        return res.status(500).json({ error: "Failed to generate practice code feedback" });
     }
 });
 

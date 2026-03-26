@@ -1,0 +1,20 @@
+# ============================================================
+# Judge0 - Start Commands
+# ============================================================
+# Run from any directory. Uses absolute path to docker-compose.yml
+
+# Start all Judge0 containers (detached)
+docker-compose -f "e:\z_projects\Judge Pipeline\judge0-official\docker-compose.yml" up -d
+
+# Stop all Judge0 containers
+docker-compose -f "e:\z_projects\Judge Pipeline\judge0-official\docker-compose.yml" down
+
+# View logs
+docker-compose -f "e:\z_projects\Judge Pipeline\judge0-official\docker-compose.yml" logs -f
+
+# Check running containers
+docker container ls
+
+# Judge0 API will be available at:
+# http://localhost:2358
+# http://localhost:2358/docs  (API docs)

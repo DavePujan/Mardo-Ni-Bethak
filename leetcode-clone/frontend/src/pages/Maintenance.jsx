@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { AuthContext } from '../context/AuthContext';
 
 export default function Maintenance() {
+    const { token, role, logout } = useContext(AuthContext);
+
   return (
     <div className="min-h-screen bg-background text-text-primary flex flex-col items-center justify-center p-4">
         <div className="bg-background-layer2 p-8 rounded-xl shadow-2xl border border-gray-800 text-center max-w-md w-full">
@@ -19,6 +22,16 @@ export default function Maintenance() {
                 We are currently performing scheduled maintenance to improve our platform. 
                 Please check back later.
             </p>
+
+                        {token && (
+                            <button
+                                type="button"
+                                onClick={logout}
+                                className="w-full mb-6 px-4 py-2 text-sm font-semibold text-red-300 border border-red-500/40 rounded-lg hover:bg-red-500/10 transition-colors"
+                            >
+                                Logout{role ? ` (${role})` : ""}
+                            </button>
+                        )}
             
             <div className="text-sm text-gray-500">
                 &copy; {new Date().getFullYear()} QuizPortal. All rights reserved.

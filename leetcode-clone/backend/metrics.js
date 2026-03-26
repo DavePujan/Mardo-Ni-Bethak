@@ -1,7 +1,9 @@
 const client = require("prom-client");
 
 // Exposes standard Node.js/V8 metrics (CPU, RAM, Event Loop lag)
-client.collectDefaultMetrics();
+if (process.env.NODE_ENV !== "test") {
+    client.collectDefaultMetrics();
+}
 
 const httpRequests = new client.Counter({
     name: "http_requests_total",

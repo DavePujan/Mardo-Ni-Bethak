@@ -3,6 +3,11 @@ import { supabase } from "../../lib/supabase";
 import api, { createFullQuiz } from "../../utils/api";
 
 export default function CreateQuiz() {
+    const hasValidSupabaseUploadConfig =
+        Boolean(import.meta.env.VITE_SUPABASE_URL) &&
+        Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY) &&
+        !String(import.meta.env.VITE_SUPABASE_ANON_KEY).includes("placeholder");
+
     // Quiz Metadata
     const [quizDetails, setQuizDetails] = useState({
         title: "",
@@ -105,6 +110,11 @@ export default function CreateQuiz() {
 
         setSubmitting(true);
         try {
+            const hasImageUpload = questions.some(q => q.image instanceof File);
+            if (hasImageUpload && !hasValidSupabaseUploadConfig) {
+                throw new Error("Supabase image upload is not configured. Set VITE_SUPABASE_ANON_KEY in frontend/.env with your real anon key.");
+            }
+
             // Process questions: Upload images if they are File objects
             const processedQuestions = await Promise.all(questions.map(async (q) => {
                 if (q.image && q.image instanceof File) {
@@ -136,7 +146,13 @@ export default function CreateQuiz() {
             setQuizDetails({ title: "", subject: "", department: "", semester: "", duration: "", totalMarks: "", description: "" });
         } catch (error) {
             console.error(error);
-            alert("Error creating quiz: " + (error.response?.data?.error || error.message));
+            const rawMessage = error.response?.data?.error || error.message;
+            const normalizedMessage = String(rawMessage || "");
+            if (normalizedMessage.includes("Invalid Compact JWS")) {
+                alert("Error creating quiz: Invalid Supabase key detected. Update VITE_SUPABASE_ANON_KEY in frontend/.env with your real Supabase anon key and restart Vite.");
+            } else {
+                alert("Error creating quiz: " + normalizedMessage);
+            }
         } finally {
             setSubmitting(false);
         }
@@ -266,6 +282,8 @@ export default function CreateQuiz() {
                                 <option value="javascript">JavaScript</option>
                                 <option value="python">Python</option>
                                 <option value="cpp">C++</option>
+                                <option value="java">Java</option>
+                                <option value="php">PHP</option>
                             </select>
                         </div>
                         <div className="grid grid-cols-2 gap-4 mb-4">

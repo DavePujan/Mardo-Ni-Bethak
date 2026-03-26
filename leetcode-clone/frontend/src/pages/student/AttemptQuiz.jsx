@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useContext } from "react";
+import { useState, useEffect, useContext, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { AuthContext } from "../../context/AuthContext";
 import CodeEditor from "../../components/CodeEditor";
@@ -26,8 +26,62 @@ const AttemptQuiz = () => {
     const [runResult, setRunResult] = useState(null);
     const [runLoading, setRunLoading] = useState(false);
 
+    // Secure Exam Mode State
+    const [secureModeStarted, setSecureModeStarted] = useState(false);
+    const [violationCount, setViolationCount] = useState(0);
+    const [violationLog, setViolationLog] = useState([]);
+    const [behaviorScore, setBehaviorScore] = useState(0);
+    const [attemptCompleted, setAttemptCompleted] = useState(false);
+    const [previewImage, setPreviewImage] = useState("");
+    const autoSubmittedRef = useRef(false);
+    const integrityActiveRef = useRef(false);
+
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+    const postIntegrityEvent = async (event, details = "") => {
+        if (!integrityActiveRef.current) return;
+        try {
+            const res = await api.post(`/api/student/quiz/${id}/integrity-event`, {
+                event,
+                timestamp: Date.now(),
+                meta: { details }
+            });
+
+            if (res?.data?.score !== undefined) {
+                setBehaviorScore(Number(res.data.score));
+            }
+        } catch {
+            // silent; exam flow must continue even if analytics event fails
+        }
+    };
+
+    const flagViolation = async (event, message) => {
+        if (!integrityActiveRef.current) return;
+
+        setViolationCount((v) => {
+            const next = v + 1;
+            if (next >= 3 && !autoSubmittedRef.current) {
+                autoSubmittedRef.current = true;
+                handleSubmit(true);
+            }
+            return next;
+        });
+        setViolationLog((prev) => [...prev.slice(-4), { event, message, at: new Date().toLocaleTimeString() }]);
+        await postIntegrityEvent(event, message);
+    };
+
+    const startSecureMode = async () => {
+        setSecureModeStarted(true);
+        integrityActiveRef.current = true;
+        try {
+            if (!document.fullscreenElement) {
+                await document.documentElement.requestFullscreen();
+            }
+        } catch {
+            await flagViolation("fullscreen_exit", "Fullscreen not granted at start");
+        }
+    };
 
     // Fetch Quiz
     useEffect(() => {
@@ -80,6 +134,85 @@ const AttemptQuiz = () => {
         return () => clearInterval(intervalId);
     }, [quiz, submitting]);
 
+    // Secure exam behavior tracking (real quiz only)
+    useEffect(() => {
+        if (!quiz || !secureModeStarted || submitting || attemptCompleted) return;
+
+        integrityActiveRef.current = true;
+
+        const onVisibilityChange = () => {
+            if (document.hidden) flagViolation("tab_switch", "Tab switched or minimized");
+        };
+
+        const onBlur = () => {
+            flagViolation("window_blur", "Window lost focus");
+        };
+
+        const onFullscreenChange = () => {
+            if (!document.fullscreenElement) {
+                flagViolation("fullscreen_exit", "Exited fullscreen");
+            }
+        };
+
+        const onContext = (e) => {
+            e.preventDefault();
+            flagViolation("copy_paste", "Context menu blocked");
+        };
+
+        const onCopy = (e) => {
+            e.preventDefault();
+            flagViolation("copy_paste", "Copy blocked");
+        };
+
+        const onPaste = (e) => {
+            e.preventDefault();
+            flagViolation("copy_paste", "Paste blocked");
+        };
+
+        const onKeydown = (e) => {
+            const key = (e.key || "").toLowerCase();
+            const blockedDevtools =
+                key === "f12" ||
+                (e.ctrlKey && e.shiftKey && (key === "i" || key === "j" || key === "c")) ||
+                (e.ctrlKey && key === "u");
+
+            if (blockedDevtools) {
+                e.preventDefault();
+                flagViolation("devtools_open", "DevTools shortcut blocked");
+            }
+        };
+
+        const fullscreenLoop = setInterval(async () => {
+            if (!document.fullscreenElement && !submitting) {
+                try {
+                    await document.documentElement.requestFullscreen();
+                } catch {
+                    // no-op; violation already tracked via fullscreenchange
+                }
+            }
+        }, 3000);
+
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        window.addEventListener("blur", onBlur);
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        document.addEventListener("contextmenu", onContext);
+        document.addEventListener("copy", onCopy);
+        document.addEventListener("paste", onPaste);
+        document.addEventListener("keydown", onKeydown);
+
+        return () => {
+            integrityActiveRef.current = false;
+            clearInterval(fullscreenLoop);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+            window.removeEventListener("blur", onBlur);
+            document.removeEventListener("fullscreenchange", onFullscreenChange);
+            document.removeEventListener("contextmenu", onContext);
+            document.removeEventListener("copy", onCopy);
+            document.removeEventListener("paste", onPaste);
+            document.removeEventListener("keydown", onKeydown);
+        };
+    }, [quiz, secureModeStarted, submitting, attemptCompleted]);
+
     const formatTime = (seconds) => {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
@@ -131,9 +264,9 @@ const AttemptQuiz = () => {
 
     const handleOptionSelect = (qId, option) => {
         setAnswers((prev) => {
-            const currentSelected = prev[qId]?.selectedOption;
+            const currentSelectedId = prev[qId]?.selectedOptionId;
             // Toggle Logic: If clicking the same option, deselect it (remove from answers)
-            if (currentSelected === option) {
+            if (String(currentSelectedId) === String(option.id)) {
                 const next = { ...prev };
                 delete next[qId];
                 return next;
@@ -141,7 +274,12 @@ const AttemptQuiz = () => {
             // Otherwise select the new option
             return {
                 ...prev,
-                [qId]: { ...prev[qId], selectedOption: option, type: 'mcq' }
+                [qId]: {
+                    ...prev[qId],
+                    selectedOptionId: option.id,
+                    selectedOption: option.option_text,
+                    type: 'mcq'
+                }
             };
         });
     };
@@ -154,18 +292,22 @@ const AttemptQuiz = () => {
     };
 
     const handleSubmit = async (auto = false) => {
+        if (submitting || attemptCompleted) return;
         if (!auto && !window.confirm("Are you sure you want to submit?")) return;
 
+        integrityActiveRef.current = false;
         setSubmitting(true);
         try {
             const formattedAnswers = Object.entries(answers).map(([qId, val]) => ({
                 questionId: qId,
+                selectedOptionId: val.selectedOptionId,
                 selectedOption: val.selectedOption,
                 submittedCode: val.submittedCode
             }));
 
             const response = await api.post(`/api/student/quiz/${id}/attempt`, { answers: formattedAnswers });
             const data = response.data;
+            setAttemptCompleted(true);
 
             if (!auto) alert(`Quiz Submitted! Score: ${data.attemptScore || 'Pending Evaluation'}`);
             navigate("/");
@@ -230,6 +372,29 @@ const AttemptQuiz = () => {
 
     return (
         <div className="flex flex-col h-screen bg-[#1e1e1e] text-gray-200 font-sans overflow-hidden">
+            {!secureModeStarted && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                    <div className="max-w-xl w-full rounded-xl border border-indigo-500/30 bg-[#111827] p-6">
+                        <h2 className="text-xl font-bold text-white mb-2">Secure Exam Mode</h2>
+                        <p className="text-sm text-gray-300 mb-4">
+                            This attempt runs in protected mode: fullscreen required, tab switch detection,
+                            copy/paste blocked, and integrity monitoring enabled.
+                        </p>
+                        <ul className="text-xs text-gray-400 space-y-1 mb-5">
+                            <li>• 3 violations can auto-submit your exam.</li>
+                            <li>• Stay on this tab and keep fullscreen enabled.</li>
+                            <li>• All integrity events are logged for teacher review.</li>
+                        </ul>
+                        <button
+                            onClick={startSecureMode}
+                            className="w-full py-2.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold"
+                        >
+                            Start Secure Exam
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <header className="h-16 bg-[#252526] border-b border-[#333] flex items-center justify-between px-4 md:px-6 shrink-0 z-20 relative">
                 <div className="flex items-center gap-4">
@@ -251,6 +416,14 @@ const AttemptQuiz = () => {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    <div className="hidden md:block text-right">
+                        <div className="text-xs text-gray-400">Integrity Score</div>
+                        <div className={`text-sm font-bold ${behaviorScore >= 80 ? 'text-red-400' : behaviorScore >= 50 ? 'text-yellow-400' : 'text-green-400'}`}>{behaviorScore}/100</div>
+                    </div>
+                    <div className="hidden md:block text-right">
+                        <div className="text-xs text-gray-400">Violations</div>
+                        <div className={`text-sm font-bold ${violationCount >= 3 ? 'text-red-400' : 'text-yellow-300'}`}>{violationCount}</div>
+                    </div>
                     <div className="text-right hidden md:block">
                         <div className="text-sm font-medium text-white">Candidate</div>
                         <div className="text-xs text-gray-400">Student ID: ****</div>
@@ -265,9 +438,20 @@ const AttemptQuiz = () => {
             <div className="flex flex-1 overflow-hidden relative">
                 {/* Left: Question Area */}
                 <div className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e] w-full">
+                    {violationLog.length > 0 && (
+                        <div className="mx-4 mt-3 rounded border border-yellow-700/40 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-200">
+                            Last integrity event: {violationLog[violationLog.length - 1].message} at {violationLog[violationLog.length - 1].at}
+                        </div>
+                    )}
+
                     {/* Header for Question */}
                     <div className="p-3 md:p-4 border-b border-[#333] flex justify-between items-center bg-[#252526]">
-                        <h2 className="text-base md:text-lg font-bold text-white">Question {currentQuestionIndex + 1}</h2>
+                        <div>
+                            <h2 className="text-base md:text-lg font-bold text-white">Question {currentQuestionIndex + 1}</h2>
+                            {quiz?.randomized && (
+                                <p className="text-[11px] text-blue-300 mt-0.5">Questions are randomized for fairness</p>
+                            )}
+                        </div>
                         <div className="flex gap-4 text-xs md:text-sm font-medium">
                             <span className="text-green-400">+1.0 Marks</span>
                         </div>
@@ -281,7 +465,15 @@ const AttemptQuiz = () => {
                             </p>
 
                             {currentQ.image_url && (
-                                <img src={currentQ.image_url} alt="Reference" className="max-h-64 rounded-lg border border-gray-700 mb-6" />
+                                <div className="mb-6">
+                                    <img
+                                        src={currentQ.image_url}
+                                        alt="Reference"
+                                        className="max-h-64 rounded-lg border border-gray-700 cursor-zoom-in"
+                                        onClick={() => setPreviewImage(currentQ.image_url)}
+                                    />
+                                    <div className="mt-2 text-xs text-blue-300">Click image to view bigger</div>
+                                </div>
                             )}
 
                             {currentQ.type === 'mcq' && (
@@ -289,19 +481,19 @@ const AttemptQuiz = () => {
                                     {currentQ.mcq_options.map((opt) => (
                                         <div
                                             key={opt.id}
-                                            onClick={() => handleOptionSelect(currentQ.id, opt.option_text)}
+                                            onClick={() => handleOptionSelect(currentQ.id, opt)}
                                             className={`
                                                 flex items-center p-3 md:p-4 rounded-lg cursor-pointer border-2 transition-all
-                                                ${answers[currentQ.id]?.selectedOption === opt.option_text
+                                                ${String(answers[currentQ.id]?.selectedOptionId) === String(opt.id)
                                                     ? 'border-blue-500 bg-blue-500/10'
                                                     : 'border-[#333] bg-[#2d2d2d] hover:bg-[#333] hover:border-gray-500'}
                                             `}
                                         >
                                             <div className={`
                                                 w-5 h-5 min-w-5 rounded-full border mr-3 flex items-center justify-center
-                                                ${answers[currentQ.id]?.selectedOption === opt.option_text ? 'border-blue-500' : 'border-gray-500'}
+                                                ${String(answers[currentQ.id]?.selectedOptionId) === String(opt.id) ? 'border-blue-500' : 'border-gray-500'}
                                             `}>
-                                                {answers[currentQ.id]?.selectedOption === opt.option_text && <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />}
+                                                {String(answers[currentQ.id]?.selectedOptionId) === String(opt.id) && <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />}
                                             </div>
                                             <span className="text-sm md:text-base text-gray-200">{opt.option_text}</span>
                                         </div>
@@ -463,6 +655,23 @@ const AttemptQuiz = () => {
                         className="fixed inset-0 bg-black/50 z-20 md:hidden"
                         onClick={() => setIsSidebarOpen(false)}
                     ></div>
+                )}
+
+                {previewImage && (
+                    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+                        <div className="relative max-w-5xl w-full">
+                            <button
+                                onClick={() => setPreviewImage("")}
+                                className="absolute -top-3 -right-3 h-9 w-9 rounded-full bg-red-600 hover:bg-red-500 text-white font-bold"
+                                aria-label="Close image preview"
+                            >
+                                x
+                            </button>
+                            <div className="rounded-lg border border-gray-700 bg-[#111827] p-2">
+                                <img src={previewImage} alt="Preview" className="w-full max-h-[80vh] object-contain rounded" />
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>

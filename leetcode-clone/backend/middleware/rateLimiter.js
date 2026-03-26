@@ -7,12 +7,28 @@ const RedisStore = RedisStoreObj.default || RedisStoreObj.RedisStore || RedisSto
 // Built-in memory store from express-rate-limit for our fallback
 const { MemoryStore } = require("express-rate-limit");
 
+// Import as singleton at module level — guarantees same Prometheus counter instance
+const { fallbackCounter } = require("../metrics");
+
 class HybridStore {
     constructor() {
         this.redisStore = null;
         this.memoryStore = new MemoryStore();
         this.redisDownUntil = 0;
         this.warned = false;
+        this.options = null;
+    }
+
+    init(options) {
+        this.options = options;
+        if (typeof this.memoryStore.init === "function") {
+            this.memoryStore.init(options);
+        }
+
+        const store = this.getRedisStore();
+        if (store && typeof store.init === "function") {
+            store.init(options);
+        }
     }
 
     getRedisStore() {
@@ -23,8 +39,18 @@ class HybridStore {
 
         if (!this.redisStore) {
             this.redisStore = new RedisStore({
-                sendCommand: (...args) => redisClient.call(...args),
+                // For ioredis + rate-limit-redis v4: signature is (command, ...args)
+                sendCommand: (command, ...args) => {
+                    if (!command) {
+                        throw new Error("Invalid Redis command for rate limiter");
+                    }
+                    return redisClient.call(String(command), ...args.map((part) => String(part)));
+                },
             });
+
+            if (this.options && typeof this.redisStore.init === "function") {
+                this.redisStore.init(this.options);
+            }
         }
         return this.redisStore;
     }
@@ -40,6 +66,7 @@ class HybridStore {
                 } catch (e) {
                     console.warn("⚠️ Redis failed, triggering 5 sec circuit breaker. Falling back to memory:", e.message);
                     this.redisDownUntil = Date.now() + 5000;
+                    fallbackCounter.inc(); // 🔥 Track crash-path fallback
                 }
             }
         } else {
@@ -47,8 +74,7 @@ class HybridStore {
                 console.warn("⚠️ Using Memory Rate Limiter");
                 this.warned = true;
             }
-            const { fallbackCounter } = require("../metrics");
-            if (fallbackCounter) fallbackCounter.inc();
+            fallbackCounter.inc(); // 🔥 Track every unavailable-path fallback
         }
 
         // Fallback -> Memory
@@ -85,7 +111,7 @@ exports.loginLimiter = rateLimit({
     message: { error: "Too many login attempts. Try again later." },
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => req.user?.id || (req.headers && req.headers["x-forwarded-for"] ? req.headers["x-forwarded-for"].split(",")[0].trim() : req.socket.remoteAddress), // Safely handles proxy arrays and avoids req.ip ERL parser bug
+    keyGenerator: (req) => req.user?.id || (req.headers && req.headers["x-forwarded-for"] ? req.headers["x-forwarded-for"].split(",")[0].trim() : req.socket?.remoteAddress) || "anonymous", // Safely handles proxy arrays and avoids req.ip ERL parser bug
     store: createRedisStore()
 });
 
@@ -96,6 +122,6 @@ exports.aiLimiter = rateLimit({
     message: { error: "Too many AI requests. Please preserve quota." },
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => req.user?.id || (req.headers && req.headers["x-forwarded-for"] ? req.headers["x-forwarded-for"].split(",")[0].trim() : req.socket.remoteAddress), // Safely handles proxy arrays and avoids req.ip ERL parser bug
+    keyGenerator: (req) => req.user?.id || (req.headers && req.headers["x-forwarded-for"] ? req.headers["x-forwarded-for"].split(",")[0].trim() : req.socket?.remoteAddress) || "anonymous", // Safely handles proxy arrays and avoids req.ip ERL parser bug
     store: createRedisStore()
 });

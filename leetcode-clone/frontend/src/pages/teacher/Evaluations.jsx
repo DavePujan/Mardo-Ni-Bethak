@@ -26,6 +26,7 @@ export default function Evaluations() {
                     <thead className="bg-white/5 border-b border-gray-800 text-gray-400 text-sm uppercase tracking-wider">
                         <tr>
                             <th className="p-4 font-medium">Student</th>
+                            <th className="p-4 font-medium">Enrollment No.</th>
                             <th className="p-4 font-medium">Quiz</th>
                             <th className="p-4 font-medium">Status</th>
                             <th className="p-4 font-medium text-right">Action</th>
@@ -33,11 +34,12 @@ export default function Evaluations() {
                     </thead>
                     <tbody className="divide-y divide-gray-800 font-light text-gray-300">
                         {list.length === 0 ? (
-                            <tr><td colSpan="4" className="p-6 text-center text-gray-500">No evaluations pending.</td></tr>
+                            <tr><td colSpan="5" className="p-6 text-center text-gray-500">No evaluations pending.</td></tr>
                         ) : (
                             list.map(item => (
                                 <tr key={item.id} className="hover:bg-white/5 transition-colors">
                                     <td className="p-4 text-white font-medium">{item.student}</td>
+                                    <td className="p-4 text-gray-300">{item.enrollmentNo || "-"}</td>
                                     <td className="p-4 text-gray-400">{item.quiz}</td>
                                     <td className="p-4">
                                         <span className="px-2 py-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded text-xs uppercase font-bold tracking-wider">

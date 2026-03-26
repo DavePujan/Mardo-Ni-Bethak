@@ -1,12 +1,50 @@
 module.exports = {
     js: (userCode, fn, input) => `
-const fs = require("fs");
 const input = \`${input}\`.trim();
 
 ${userCode}
 
-const args = input.split(" ").map(Number);
-console.log(${fn}(...args));
+try {
+  const args = input.split(" ").map(Number);
+
+  let result;
+
+  if (typeof ${fn} === "function") {
+    result = ${fn}(...args);
+  } else if (typeof globalThis["${fn}"] === "function") {
+    result = globalThis["${fn}"](...args);
+  } else {
+    throw new Error("Function ${fn} not found");
+  }
+
+  console.log(result);
+} catch (err) {
+  console.error(err.message);
+}
+`,
+
+  javascript: (userCode, fn, input) => `
+const input = \`${input}\`.trim();
+
+${userCode}
+
+try {
+  const args = input.split(" ").map(Number);
+
+  let result;
+
+  if (typeof ${fn} === "function") {
+    result = ${fn}(...args);
+  } else if (typeof globalThis["${fn}"] === "function") {
+    result = globalThis["${fn}"](...args);
+  } else {
+    throw new Error("Function ${fn} not found");
+  }
+
+  console.log(result);
+} catch (err) {
+  console.error(err.message);
+}
 `,
 
     cpp: (userCode, fn, input) => `
@@ -52,6 +90,20 @@ public static void main(String[] args){
   int a=sc.nextInt(), b=sc.nextInt();
   System.out.print(${fn}(a,b));
 }
+}
+`,
+
+    php: (userCode, fn, input) => `<?php
+${userCode}
+
+$input = trim("${input}");
+$parts = preg_split('/\\s+/', $input);
+$args = array_map('intval', $parts);
+
+if (function_exists('${fn}')) {
+  echo call_user_func_array('${fn}', $args);
+} else {
+  fwrite(STDERR, 'Function ${fn} not found');
 }
 `
 };

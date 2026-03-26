@@ -2,6 +2,7 @@ const request = require('supertest');
 const app = require('../server');
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
+const redisClient = require('../config/redis');
 
 // Mock Supabase to avoid real DB network calls
 jest.mock('@supabase/supabase-js', () => ({
@@ -33,8 +34,8 @@ describe("Auth API", () => {
             .send({ email: "test@test.com", password: "password123" });
 
         expect(res.statusCode).toEqual(200);
-        expect(res.body).toHaveProperty("token");
         expect(res.body.role).toBe("student");
+        expect(Array.isArray(res.headers['set-cookie'])).toBe(true);
     });
 
     it("should fail login with incorrect password", async () => {
@@ -51,5 +52,13 @@ describe("Auth API", () => {
             .send({ email: "test@test.com", password: "wrongpassword" });
 
         expect(res.statusCode).toEqual(401);
+    });
+
+    afterAll(async () => {
+        try {
+            redisClient.disconnect();
+        } catch (e) {
+            // Ignore teardown errors in tests.
+        }
     });
 });

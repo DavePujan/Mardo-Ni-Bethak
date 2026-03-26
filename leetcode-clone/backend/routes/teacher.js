@@ -4,6 +4,7 @@ const { createClient } = require("@supabase/supabase-js");
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const { auth, authorize } = require("../middleware/auth");
 const { aiLimiter } = require("../middleware/rateLimiter");
+const pool = require("../db");
 
 // Mock database for problems
 // In reality, this should be in models/questions.js or independent db
@@ -12,6 +13,13 @@ const { aiLimiter } = require("../middleware/rateLimiter");
 
 const Quiz = require("../models/Quiz");
 const Evaluation = require("../models/Evaluation");
+
+async function ensureProfileEnrollmentColumn() {
+    await pool.query(`
+        ALTER TABLE profiles
+        ADD COLUMN IF NOT EXISTS enrollment_no TEXT;
+    `);
+}
 
 // Dashboard Stats
 router.get("/dashboard", auth, authorize('teacher'), async (req, res) => {
@@ -102,13 +110,15 @@ router.post("/quiz/:id/end", auth, authorize('teacher'), async (req, res) => {
 // Evaluations
 router.get("/evaluations", auth, authorize('teacher'), async (req, res) => {
     try {
+        await ensureProfileEnrollmentColumn();
+
         const { data, error } = await supabase
             .from("quiz_attempts")
             .select(`
                 id,
                 score,
                 status,
-                profiles(email),
+                profiles(email, full_name, enrollment_no),
                 quizzes(title)
             `)
             .eq("status", "submitted");
@@ -118,7 +128,9 @@ router.get("/evaluations", auth, authorize('teacher'), async (req, res) => {
         // Transform for frontend
         const formatted = data.map(item => ({
             id: item.id,
-            student: item.profiles?.email || "Unknown",
+            student: item.profiles?.full_name || item.profiles?.email || "Unknown",
+            enrollmentNo: item.profiles?.enrollment_no || "-",
+            email: item.profiles?.email || "-",
             quiz: item.quizzes?.title || "Unknown",
             status: item.status
         }));
@@ -133,6 +145,8 @@ router.get("/evaluations", auth, authorize('teacher'), async (req, res) => {
 // Single Evaluation Details
 router.get("/evaluation/:id", auth, authorize('teacher'), async (req, res) => {
     try {
+        await ensureProfileEnrollmentColumn();
+
         const { id } = req.params;
 
         // Fetch Attempt
@@ -140,10 +154,16 @@ router.get("/evaluation/:id", auth, authorize('teacher'), async (req, res) => {
             .from("quiz_attempts")
             .select(`
                 id,
+                user_id,
+                quiz_id,
                 score,
+                total_marks,
                 status,
-                profiles(email),
-                quizzes(title)
+                started_at,
+                completed_at,
+                updated_at,
+                profiles(email, full_name, enrollment_no),
+                quizzes(title, duration)
             `)
             .eq("id", id)
             .single();
@@ -169,11 +189,56 @@ router.get("/evaluation/:id", auth, authorize('teacher'), async (req, res) => {
 
         if (answersError) throw answersError;
 
+        const { data: integrityLog } = await supabase
+            .from("exam_behavior_logs")
+            .select(`
+                final_score,
+                risk_level,
+                tab_switches,
+                fullscreen_exits,
+                window_blurs,
+                copy_events,
+                devtools_attempts,
+                reasons,
+                event_timeline,
+                updated_at
+            `)
+            .eq("attempt_id", id)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        const startTs = attempt?.started_at || attempt?.updated_at;
+        const endTs = attempt?.completed_at || new Date().toISOString();
+        const startMs = startTs ? new Date(startTs).getTime() : null;
+        const endMs = endTs ? new Date(endTs).getTime() : null;
+        const timeTakenSeconds = startMs && endMs ? Math.max(0, Math.floor((endMs - startMs) / 1000)) : null;
+
         res.json({
             id: attempt.id,
-            student: attempt.profiles?.email || "Unknown",
+            student: attempt.profiles?.full_name || attempt.profiles?.email || "Unknown",
+            enrollmentNo: attempt.profiles?.enrollment_no || "-",
+            email: attempt.profiles?.email || "-",
             quiz: attempt.quizzes?.title || "Unknown",
             score: attempt.score,
+            status: attempt.status,
+            totalMarks: attempt.total_marks,
+            quizDurationMinutes: attempt.quizzes?.duration || null,
+            startedAt: startTs || null,
+            completedAt: attempt?.completed_at || null,
+            timeTakenSeconds,
+            integrity: integrityLog ? {
+                score: Number(integrityLog.final_score || 0),
+                risk: integrityLog.risk_level || "Safe",
+                counters: {
+                    tab_switches: integrityLog.tab_switches || 0,
+                    fullscreen_exits: integrityLog.fullscreen_exits || 0,
+                    window_blurs: integrityLog.window_blurs || 0,
+                    copy_events: integrityLog.copy_events || 0,
+                    devtools_attempts: integrityLog.devtools_attempts || 0
+                },
+                updatedAt: integrityLog.updated_at
+            } : null,
             answers: answers.map(a => ({
                 questionId: a.question_id,
                 question: a.question?.title,
@@ -509,6 +574,10 @@ router.post("/evaluate/:id", auth, authorize('teacher'), aiLimiter, async (req, 
                             // For this fix, let's keep "solution" for C++ unless we find "sum" explicitly
                             if (code.includes("int sum")) funcName = "sum";
                             return `#include <iostream>\n#include <vector>\n#include <sstream>\nusing namespace std;\n\n${code}\n\nint main() {\n    // Driver assuming int inputs\n    int a, b;\n    while (cin >> a >> b) {\n        cout << ${funcName}(a, b) << endl;\n    }\n    return 0;\n}`;
+                        } else if (lang === "java") {
+                            return `import java.util.*;\n\npublic class Main {\n${code}\n\npublic static void main(String[] args) {\n    Scanner sc = new Scanner(System.in);\n    int a = sc.nextInt();\n    int b = sc.nextInt();\n    System.out.print(${funcName}(a, b));\n}\n}`;
+                        } else if (lang === "php") {
+                            return `<?php\n${code}\n\n$input = trim(stream_get_contents(STDIN));\n$parts = preg_split('/\\\\s+/', $input);\n$args = array_map('intval', $parts);\nif (function_exists('${funcName}')) {\n    echo call_user_func_array('${funcName}', $args);\n} else {\n    fwrite(STDERR, 'Function not found');\n}\n?>`;
                         }
                         return code;
                     };
@@ -516,7 +585,7 @@ router.post("/evaluate/:id", auth, authorize('teacher'), aiLimiter, async (req, 
                     // Prepare batch submission
                     const submissions = testCases.map(tc => ({
                         source_code: wrapCode(submitted_code, language),
-                        language_id: language === "python" ? 71 : language === "cpp" ? 54 : 63,
+                        language_id: judge0.resolveLanguageId(language),
                         stdin: tc.input,
                         expected_output: tc.expected_output
                     }));

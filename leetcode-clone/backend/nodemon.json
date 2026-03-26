@@ -1,0 +1,13 @@
+{
+  "watch": [
+    "./"
+  ],
+  "ext": "js,mjs,cjs,json",
+  "ignore": [
+    "node_modules/**",
+    "workers/**"
+  ],
+  "events": {
+    "start": "node scripts/devBootstrap.js"
+  }
+}

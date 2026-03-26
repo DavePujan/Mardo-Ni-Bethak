@@ -13,6 +13,7 @@ This project is a comprehensive Quiz Portal and LeetCode-style coding platform, 
 - **Student Analytics**: Detailed performance analysis with topic proficiency charts and AI insights.
 - **Robust Testing**: Comprehensive backend suite powered by Jest and Supertest.
 - **API Documentation**: Auto-generated Swagger UI availability.
+- **Async Job Processing**: BullMQ-powered submission queue with background workers, retry logic, and job status polling.
 
 ## Full Directory Structure
 
@@ -22,11 +23,17 @@ leetcode-clone/
 │   └── workflows
 ├── backend
 │   ├── .env
+│   ├── config
+│   │   └── redis.js
 │   ├── controllers
 │   │   └── analyticsController.js
 │   ├── db.js
+│   ├── docker-compose.dev.yml
+│   ├── load-test.js
+│   ├── metrics.js
 │   ├── middleware
-│   │   └── auth.js
+│   │   ├── auth.js
+│   │   └── rateLimiter.js
 │   ├── model
 │   │   ├── model.json
 │   │   ├── vocab.json
@@ -35,29 +42,43 @@ leetcode-clone/
 │   │   ├── AccessRequest.js
 │   │   ├── Evaluation.js
 │   │   ├── Leaderboard.js
-│   │   ├── questions.js
+│   │   ├── Question.js
 │   │   ├── Quiz.js
 │   │   └── User.js
 │   ├── package-lock.json
 │   ├── package.json
+│   ├── nodemon.json
+│   ├── prometheus.yml
+│   ├── queues
+│   │   └── submission.queue.js
 │   ├── routes
 │   │   ├── admin.js
 │   │   ├── analytics.js
 │   │   ├── auth.js
+│   │   ├── job.js
 │   │   ├── leaderboard.js
 │   │   ├── student.js
 │   │   ├── submit.js
 │   │   └── teacher.js
+│   ├── scripts
+│   │   └── devBootstrap.js
 │   ├── server.js
 │   ├── swagger-output.json
 │   ├── swagger.js
-│   └── utils
-│       ├── ai.js
-│       ├── boilerplates.js
-│       ├── dynamicTopicGenerator.js
-│       ├── judge0.js
-│       ├── passport.js
-│       └── topicClassifier.js
+│   ├── test-queue.js
+│   ├── tests
+│   │   ├── auth.test.js
+│   │   ├── quiz.test.js
+│   │   └── submit.test.js
+│   ├── utils
+│   │   ├── ai.js
+│   │   ├── boilerplates.js
+│   │   ├── dynamicTopicGenerator.js
+│   │   ├── judge0.js
+│   │   ├── passport.js
+│   │   └── topicClassifier.js
+│   └── workers
+│       └── submission.worker.js
 ├── frontend
 │   ├── .env
 │   ├── .gitignore
@@ -127,6 +148,25 @@ leetcode-clone/
 │   │       └── templates.js
 │   ├── tailwind.config.js
 │   └── vite.config.js
+├── quiz-evaluator
+│   ├── .env
+│   ├── backend
+│   │   ├── csv.js
+│   │   ├── index.js
+│   │   ├── judge0.js
+│   │   ├── llm.js
+│   │   ├── schema.sql
+│   │   ├── scorer.js
+│   │   ├── supabase.js
+│   │   └── test_judge.js
+│   ├── commands.txt
+│   └── docker
+│       └── judge0
+│           ├── docker-compose.yml
+│           └── judge0.conf
+├── tests-scripts
+│   ├── backend-test.js
+│   └── frontend-test.js
 ├── supabase
 │   └── functions
 │       ├── deno.json
@@ -209,13 +249,17 @@ The backend is an Express.js application located in `leetcode-clone/backend`.
    JUDGE0_API_KEY=your_judge0_api_key
    ```
 
-4. **Start the Server:**
+4. **Start the Server (auto bootstraps Redis + Prometheus + Grafana):**
 
    ```bash
-   node server.js
+   nodemon server.js
    ```
 
-   > The server will start on port 5000 (or the port specified in .env).
+   > On startup, `backend/nodemon.json` runs `scripts/devBootstrap.js`, which attempts to bring up:
+   > - Redis, Prometheus, and Grafana via `backend/docker-compose.dev.yml`
+   > - Existing `judge0-official-*` containers (if present locally)
+   > Backend still starts even if Docker is unavailable.
+   > The server runs on port 5000 (or the port specified in `.env`).
 
 5. **API Documentation:**
    The backend includes auto-generated API documentation using Swagger UI.
@@ -257,48 +301,56 @@ The frontend is a React + Vite application located in `leetcode-clone/frontend`.
 
 ### 4. Observability & SRE Stack (Grafana, Prometheus, Redis)
 
-The backend is fortified with enterprise-grade telemetry, a hybrid rate-limiter, and circuit breaker fallbacks.
-To run the full stack locally for monitoring or chaos testing:
+The backend includes enterprise telemetry, hybrid rate limiting, and ML classifier support.
+With the new bootstrap flow, infra starts automatically when you run `nodemon server.js` from `backend`.
+You can still manage containers manually when needed:
 
-1. **Start the Redis Cache (Rate Limiting & Leaderboards):**
-
-   ```bash
-   docker start quiz-redis
-   # If not created yet: docker run -d -p 6379:6379 --name quiz-redis --restart unless-stopped redis
-   ```
-
-2. **Start the Prometheus Metric Scraper:**
+1. **Manual start all observability services:**
 
    ```bash
-   docker run -d -p 9090:9090 --name prometheus -v "${PWD}/prometheus.yml:/etc/prometheus/prometheus.yml" prom/prometheus
+   cd leetcode-clone/backend
+   npm run infra:up
    ```
 
-   > Access raw metrics at `http://localhost:5000/metrics` or via Prometheus at `http://localhost:9090`
-
-3. **Start the Grafana Visualizer:**
+2. **Manual stop all observability services:**
 
    ```bash
-   docker run -d -p 3000:3000 --name grafana grafana/grafana
+   cd leetcode-clone/backend
+   npm run infra:down
    ```
 
-   > Access Grafana at `http://localhost:3000` (Login: `admin` / `admin`). Hook up Prometheus as a data source to build dashboards tracking RPS, 429s, and Circuit Breaker behavior.
-
-4. **Dashboard URLs & Credentials:**
+3. **Service URLs:**
 
    | Service    | URL                             | Credentials       |
    | ---------- | ------------------------------- | ----------------- |
-   | Grafana    | `http://localhost:3000`         | `admin` / `admin` |
+   | Redis      | `localhost:6379`                | —                 |
    | Prometheus | `http://localhost:9090`         | —                 |
+   | Grafana    | `http://localhost:3000`         | `admin` / `admin` |
    | Metrics    | `http://localhost:5000/metrics` | —                 |
 
-5. **Container Management (Start / Stop):**
-   ```bash
-   docker start quiz-redis    # docker stop quiz-redis
-   docker start prometheus    # docker stop prometheus
-   docker start grafana       # docker stop grafana
-   ```
+### 5. Zero-Friction Local Dev (What to run daily)
 
-### 6. Testing
+From two terminals:
+
+```bash
+# Terminal 1
+cd leetcode-clone/backend
+nodemon server.js
+
+# Terminal 2
+cd leetcode-clone/frontend
+npm run dev
+```
+
+This starts the app plus required local infra automatically (when Docker is available), starts existing `judge0-official-*` containers if present, and validates ML model artifacts at backend boot.
+
+### 6. Troubleshooting Startup
+
+- If backend says `Port 5000 is already in use`, stop the previous backend process and run again.
+- If Docker is not running, backend will still boot; Redis/Grafana/Prometheus features may be degraded.
+- If model files are missing under `backend/model/`, topic classification will fall back safely instead of crashing startup.
+
+### 7. Testing
 
 The backend implements a comprehensive test coverage suite powered by Jest and Supertest, complete with `jest.mock` profiles to simulate Supabase and Judge0 without affecting live database integrity or API limits. You can also run load tests using K6:
 
@@ -312,3 +364,34 @@ docker run --rm -v "${PWD}/leetcode-clone/backend/load-test.js:/script.js" -e AP
    cd leetcode-clone/backend
    npm test
    ```
+
+2. **Use centralized test runners (`tests-scripts`)**
+   ```bash
+   # Backend runner
+   cd leetcode-clone/backend
+   npm run test:runner
+
+   # Frontend runner (build smoke test)
+   cd ../frontend
+   npm run test:runner
+   ```
+
+   These runners are located in:
+   - `leetcode-clone/tests-scripts/backend-test.js`
+   - `leetcode-clone/tests-scripts/frontend-test.js`
+
+## Commands to use now
+
+### Backend tests
+
+```bash
+cd leetcode-clone/backend
+npm run test:runner
+```
+
+### Frontend tests
+
+```bash
+cd leetcode-clone/frontend
+npm run test:runner
+```

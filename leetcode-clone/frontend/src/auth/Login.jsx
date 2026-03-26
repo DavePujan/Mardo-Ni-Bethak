@@ -127,6 +127,13 @@ export default function Login() {
                             </Link>
                         </div>
 
+                        <div className="text-center text-sm text-gray-400">
+                            New here?{" "}
+                            <Link to="/request-access" className="text-primary hover:text-white font-semibold transition-colors">
+                                Register
+                            </Link>
+                        </div>
+
                         <button
                             type="submit"
                             onClick={submit}

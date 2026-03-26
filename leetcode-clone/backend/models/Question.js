@@ -3,7 +3,8 @@ const LANG = {
     cpp: 54,
     c: 50,
     python: 71,
-    java: 62
+    java: 62,
+    php: 68
 };
 
 module.exports = {

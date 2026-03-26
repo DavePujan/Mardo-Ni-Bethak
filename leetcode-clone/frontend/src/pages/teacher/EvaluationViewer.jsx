@@ -5,6 +5,7 @@ export default function EvaluationViewer() {
     const { id } = useParams();
     const [submission, setSubmission] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [liveSeconds, setLiveSeconds] = useState(null);
 
     // Mock getSubmissions
     async function getSubmissions() {
@@ -22,6 +23,35 @@ export default function EvaluationViewer() {
             })
             .catch(() => setSubmission(null));
     }, [id]);
+
+    useEffect(() => {
+        if (!submission) return;
+
+        const base = Number(submission.timeTakenSeconds);
+        if (!Number.isFinite(base)) {
+            setLiveSeconds(null);
+            return;
+        }
+
+        setLiveSeconds(base);
+
+        // Keep ticking only while submission is not finalized.
+        if (submission.completedAt || submission.status === "evaluated") return;
+
+        const timer = setInterval(() => {
+            setLiveSeconds((prev) => (Number.isFinite(prev) ? prev + 1 : prev));
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [submission]);
+
+    const formatDuration = (seconds) => {
+        if (!Number.isFinite(seconds)) return "-";
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    };
 
     const handleAutoEvaluate = async () => {
         if (!confirm("Run Auto-Evaluation? This will use AI and Judge0 to grade code questions.")) return;
@@ -58,8 +88,13 @@ export default function EvaluationViewer() {
                     <div className="flex justify-between items-center mb-4">
                         <div>
                             <p className="font-semibold text-gray-200">Student: {submission.student}</p>
+                            <p className="text-sm text-gray-400">Enrollment No: {submission.enrollmentNo || "-"}</p>
                             <p className="text-sm text-gray-400">Quiz: {submission.quiz}</p>
                             <p className="text-sm text-gray-400">Total Score: {submission.score}</p>
+                            <p className="text-sm text-gray-400">Timer: {formatDuration(liveSeconds)}</p>
+                            {submission.quizDurationMinutes && (
+                                <p className="text-xs text-gray-500">Quiz Duration: {submission.quizDurationMinutes} min</p>
+                            )}
                         </div>
                         <button
                             onClick={handleAutoEvaluate}
@@ -68,6 +103,25 @@ export default function EvaluationViewer() {
                         >
                             {loading ? "Evaluating..." : "Auto Evaluate with AI"}
                         </button>
+                    </div>
+
+                    <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="rounded border border-indigo-700/40 bg-indigo-900/10 p-3">
+                            <p className="text-xs text-gray-400 uppercase tracking-wider">Integrity Score</p>
+                            <p className="text-xl font-bold text-white mt-1">
+                                {submission.integrity ? `${submission.integrity.score}/100` : "N/A"}
+                            </p>
+                            <p className="text-xs text-gray-300 mt-1">
+                                Risk: {submission.integrity?.risk || "Safe"}
+                            </p>
+                        </div>
+
+                        <div className="rounded border border-gray-700 bg-[#252526] p-3">
+                            <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Key Events</p>
+                            <p className="text-xs text-gray-300">
+                                FS:{submission.integrity?.counters?.fullscreen_exits || 0} | Tab:{submission.integrity?.counters?.tab_switches || 0} | Blur:{submission.integrity?.counters?.window_blurs || 0} | CP:{submission.integrity?.counters?.copy_events || 0} | DT:{submission.integrity?.counters?.devtools_attempts || 0}
+                            </p>
+                        </div>
                     </div>
 
                     {submission.answers.map((a, i) => (

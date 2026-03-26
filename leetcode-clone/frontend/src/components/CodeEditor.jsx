@@ -4,6 +4,8 @@ import React, { useRef } from "react";
 const editorOptions = {
     minimap: { enabled: false },
     fontSize: 14,
+    fontLigatures: true,
+    cursorSmoothCaretAnimation: "on",
     automaticLayout: true,
     quickSuggestions: false,
     parameterHints: { enabled: false },
@@ -16,10 +18,10 @@ const editorOptions = {
     renderLineHighlight: "none"
 };
 
-function CodeEditor({ language, code, setCode, template, width = "650px", height = "400px", lockFirstLine = false }) {
+function CodeEditor({ language, code, setCode, template, width = "650px", height = "400px", lockFirstLine = false, readOnly = false }) {
     const editorRef = useRef(null);
 
-    function onMount(editor, monaco) {
+    function onMount(editor) {
         editorRef.current = editor;
 
         if (lockFirstLine) {
@@ -57,7 +59,7 @@ function CodeEditor({ language, code, setCode, template, width = "650px", height
             theme="vs-dark"
             onChange={handleEditorChange}
             onMount={onMount}
-            options={editorOptions}
+            options={{ ...editorOptions, readOnly }}
         />
     );
 }
